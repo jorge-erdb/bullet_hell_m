@@ -10,6 +10,7 @@ class Map {
         this.width = width;
         this.height = height;
         this.tileSize = 32;
+        this.corridorWidth = 64; // 2 tiles
         this.rooms = [];
         this.corridors = [];
         this.exit = null;
@@ -152,15 +153,10 @@ class Map {
 
     /** Create a corridor connecting two rooms (L-shaped). */
     createCorridor(roomA, roomB) {
-        const ax = roomA.tx * this.tileSize;
-        const ay = roomA.ty * this.tileSize;
-        const bx = roomB.tx * this.tileSize;
-        const by = roomB.ty * this.tileSize;
-
-        this.corridors.push({
-            x1: ax, y1: ay,
-            x2: bx, y2: by
-        });
+        // Only the room references are stored here. Pixel endpoints need room
+        // centres, which don't exist until calculatePositions() runs, so they
+        // are resolved there rather than guessed from tile coords.
+        this.corridors.push({ a: roomA, b: roomB });
     }
 
     /** Assign room types. */
@@ -219,6 +215,14 @@ class Map {
             room.h = room.th * this.tileSize;
             room.cx = room.x + room.w / 2; // center x
             room.cy = room.y + room.h / 2; // center y
+        }
+
+        // Corridor endpoints: centre of each connected room
+        for (const corr of this.corridors) {
+            corr.x1 = corr.a.cx;
+            corr.y1 = corr.a.cy;
+            corr.x2 = corr.b.cx;
+            corr.y2 = corr.b.cy;
         }
 
         // Player start: center of first room
@@ -427,9 +431,6 @@ class Map {
             for (const seg of segments) {
                 ctx.fillStyle = '#2a2a2a';
                 ctx.fillRect(seg.x1, seg.y1, seg.x2 - seg.x1, seg.y2 - seg.y1);
-                ctx.strokeStyle = '#333333';
-                ctx.lineWidth = 0.5;
-                ctx.strokeRect(seg.x1, seg.y1, seg.x2 - seg.x1, seg.y2 - seg.y1);
             }
         }
 
@@ -469,23 +470,29 @@ class Map {
         }
     }
 
-    /** Get corridor segments (L-shaped). */
-    corridorSegments(corr) {
-        const segments = [];
-        // Horizontal segment
-        segments.push({
-            x1: Math.min(corr.x1, corr.x2),
-            y1: corr.y1,
-            x2: Math.max(corr.x1, corr.x2),
-            y2: corr.y1
-        });
-        // Vertical segment
-        segments.push({
-            x1: corr.x2,
-            y1: Math.min(corr.y1, corr.y2),
-            x2: corr.x2,
-            y2: Math.max(corr.y1, corr.y2)
-        });
-        return segments;
+    /**
+     * Get corridor segments (L-shaped: horizontal at y1, then vertical at x2).
+     *
+     * Each segment is a rectangle of real width. Previously these were returned
+     * with zero thickness, so the fillRect() in draw() painted nothing and
+     * corridors showed up as hairlines. Both segments are extended by a half
+     * width at their ends so the elbow joins cleanly instead of notching.
+     */
+    corridorSegments(corr, width = this.corridorWidth) {
+        const h = width / 2;
+        return [
+            {   // horizontal run
+                x1: Math.min(corr.x1, corr.x2) - h,
+                y1: corr.y1 - h,
+                x2: Math.max(corr.x1, corr.x2) + h,
+                y2: corr.y1 + h
+            },
+            {   // vertical run
+                x1: corr.x2 - h,
+                y1: Math.min(corr.y1, corr.y2) - h,
+                x2: corr.x2 + h,
+                y2: Math.max(corr.y1, corr.y2) + h
+            }
+        ];
     }
 }

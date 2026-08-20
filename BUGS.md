@@ -9,21 +9,7 @@ debugging path is part of the record, not noise.
 
 ## Open
 
-### A. Corridors render as hairlines instead of floors
-- **File:** `js/map.js` — `corridorSegments()` / `draw()`
-- **Symptom:** Corridors between rooms appear as thin grey lines rather than
-  walkable floor strips, so the dungeon reads as disconnected rooms.
-- **Cause:** `corridorSegments()` returns segments with zero thickness — the
-  horizontal segment has `y1 === y2` and the vertical one `x1 === x2`. The
-  `ctx.fillRect(...)` in `draw()` is therefore given a height (or width) of `0`
-  and paints nothing; only the `strokeRect` at `lineWidth = 0.5` shows up.
-- **Verified:** generated segments measure `{w: 0, h: 0}` and `{w: 0, h: 288}`.
-- **Fix:** give segments a real width (e.g. 2–3 tiles) by expanding each one
-  perpendicular to its axis before drawing.
-- **Severity:** 🟡 Cosmetic only — there is no wall collision, so movement is
-  unaffected (see C).
-
-### B. `ensureConnectivity()` is a no-op
+### A. `ensureConnectivity()` is a no-op
 - **File:** `js/map.js` — `ensureConnectivity()`
 - **Symptom:** None observable; the function does not do what its name claims.
 - **Cause:** It performs a BFS and fills a `visited` set, then returns without
@@ -36,18 +22,18 @@ debugging path is part of the record, not noise.
   corridors)` as written.
 - **Severity:** 🟢 Dead logic.
 
-### C. No wall collision
+### B. No wall collision
 - **File:** `js/player.js` — `update()`
 - **Symptom:** The player can walk freely across the entire 2000×2000 map,
   including the void between rooms, ignoring room and corridor boundaries.
 - **Cause:** Movement is clamped only to map bounds; room geometry is never
   consulted.
 - **Fix:** clamp movement to the union of room and corridor rectangles, which
-  depends on A being fixed first (corridors need real width to walk down).
+  is now feasible since corridors have real width.
 - **Severity:** 🟡 Design decision as much as a bug — currently the dungeon is
   a visual backdrop rather than a constraint.
 
-### D. Boss enemy is unreachable content
+### C. Boss enemy is unreachable content
 - **File:** `js/enemy.js` (`BossEnemy`), `js/map.js` (`assignRoomTypes()`)
 - **Symptom:** A complete multi-phase boss — hexagon rendering, phase indicator,
   wide health bar, distinct attack patterns — never appears in play.
@@ -58,7 +44,7 @@ debugging path is part of the record, not noise.
   that isn't the exit), or delete the class.
 - **Severity:** 🟢 Dead code / missing feature.
 
-### E. Room geometry uses two different conventions
+### D. Room geometry uses two different conventions
 - **File:** `js/map.js` — `overlapsAny()` vs `calculatePositions()`
 - **Symptom:** None currently observable.
 - **Cause:** `overlapsAny()` treats `(tx, ty)` as the room's **centre**
@@ -72,7 +58,7 @@ debugging path is part of the record, not noise.
 - **Fix:** pick one convention and use it in both places.
 - **Severity:** 🟢 Latent inconsistency.
 
-### F. Canvas is not DPI-scaled
+### E. Canvas is not DPI-scaled
 - **File:** `js/main.js`
 - **Symptom:** Rendering is soft on HiDPI/retina displays.
 - **Cause:** The canvas backing store is sized to CSS pixels
@@ -125,42 +111,65 @@ debugging path is part of the record, not noise.
   exactly 61 times — a 1:1 ratio, so a single chain.
 - **Status:** ✅ Fixed.
 
-### 4. `gameOver()` left the level-up screen visible 🟡
+### 4. Corridors rendered as hairlines instead of floors 🟡
+- **File:** `js/map.js` — `createCorridor()`, `calculatePositions()`,
+  `corridorSegments()`, `draw()`
+- **Symptom:** Corridors appeared as thin grey lines, so the dungeon read as a
+  scatter of disconnected boxes rather than a connected floor plan.
+- **Cause:** Two defects compounding. `corridorSegments()` returned segments of
+  zero thickness (`y1 === y2` horizontally, `x1 === x2` vertically), so the
+  `fillRect()` in `draw()` was handed a height or width of `0` and painted
+  nothing — only the `0.5px` stroke showed. Separately, `createCorridor()`
+  connected room **top-left corners** rather than centres, because it runs
+  during `generate()` before `calculatePositions()` has computed `cx`/`cy`.
+- **Fix:** `createCorridor()` now stores room references only, and
+  `calculatePositions()` resolves endpoints to room centres once they exist.
+  `corridorSegments()` returns rectangles of real width (`corridorWidth`, 2
+  tiles), each extended by a half width at its ends so the elbow joins cleanly.
+  The rectangle stroke was dropped — corridors draw over rooms, so their floor
+  now punches a doorway through the room wall, and an outline would streak
+  across it.
+- **Verified:** across 200 generated maps, 0 degenerate segments and a minimum
+  thickness of 64 px. The minimap benefits too, since it now traces
+  centre-to-centre.
+- **Status:** ✅ Fixed.
+
+### 5. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 5. Game loop never stopped after game over 🟡
+### 6. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 6. Player could act during room transitions 🟡
+### 7. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 7. Confirm button worked with no upgrade selected 🟢
+### 8. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 8. Only one upgrade shown for a multi-level XP gain 🟢
+### 9. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 9. Redundant `Game.level` 🟢
+### 10. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 10. Over-generous bullet cleanup margin 🟢
+### 11. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 11. Confusing "Full Heal" upgrade 🟢
+### 12. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 12. Debug scaffolding shipped in the build 🟢
+### 13. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -176,5 +185,5 @@ debugging path is part of the record, not noise.
 | Severity | Open | Fixed |
 |---|---|---|
 | 🔴 Critical | 0 | 3 |
-| 🟡 Moderate | 2 | 3 |
+| 🟡 Moderate | 1 | 4 |
 | 🟢 Minor | 4 | 6 |
