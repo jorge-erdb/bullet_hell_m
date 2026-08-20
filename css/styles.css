@@ -492,3 +492,17 @@ body.touch-device .rotate-gate { }
     #minimap { width: 96px; height: 96px; }
     .controls-info { display: none; }
 }
+
+/* Sticks rest dimmed at their default positions so a player can see the
+   controls exist before touching anything, then brighten on grab. */
+.stick.stick-idle {
+    opacity: 0.32;
+}
+
+/* Build marker: lets a cached tablet be identified at a glance. */
+.build-marker {
+    font-size: 0.4rem;
+    color: #3d2f28;
+    letter-spacing: 0.18em;
+    margin-top: 2.5em;
+}

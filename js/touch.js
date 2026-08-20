@@ -27,8 +27,11 @@ class TouchControls {
 
         this.moveEl = root.querySelector('#stick-move');
         this.aimEl = root.querySelector('#stick-aim');
+        this.parked = null;
 
         this.bind();
+        this.park();
+        window.addEventListener('resize', () => this.park());
     }
 
     /** Is this a touch device at all? Governs whether the layer is shown. */
@@ -37,13 +40,53 @@ class TouchControls {
     }
 
     bind() {
-        // Pointer events cover touch, pen and mouse with one code path.
-        this.root.addEventListener('pointerdown', (e) => this.onDown(e));
-        this.root.addEventListener('pointermove', (e) => this.onMove(e));
-        this.root.addEventListener('pointerup', (e) => this.onUp(e));
-        this.root.addEventListener('pointercancel', (e) => this.onUp(e));
+        if (typeof window.PointerEvent !== 'undefined') {
+            // Pointer events cover touch, pen and mouse with one code path.
+            this.root.addEventListener('pointerdown', (e) => this.onDown(e));
+            this.root.addEventListener('pointermove', (e) => this.onMove(e));
+            this.root.addEventListener('pointerup', (e) => this.onUp(e));
+            this.root.addEventListener('pointercancel', (e) => this.onUp(e));
+        } else {
+            // Fallback for browsers without Pointer Events. Touch identifiers
+            // play the same role as pointerIds, so the handlers are reused.
+            const each = (e, fn) => {
+                for (const t of e.changedTouches) {
+                    fn({
+                        pointerId: t.identifier,
+                        clientX: t.clientX,
+                        clientY: t.clientY,
+                        preventDefault: () => e.preventDefault()
+                    });
+                }
+                e.preventDefault();
+            };
+            this.root.addEventListener('touchstart', (e) => each(e, (p) => this.onDown(p)), { passive: false });
+            this.root.addEventListener('touchmove', (e) => each(e, (p) => this.onMove(p)), { passive: false });
+            this.root.addEventListener('touchend', (e) => each(e, (p) => this.onUp(p)), { passive: false });
+            this.root.addEventListener('touchcancel', (e) => each(e, (p) => this.onUp(p)), { passive: false });
+        }
         // Stop long-press selection and double-tap zoom on the play surface.
         this.root.addEventListener('contextmenu', (e) => e.preventDefault());
+    }
+
+    /**
+     * Park both sticks at their resting positions, dimmed.
+     *
+     * Floating sticks that are invisible until touched are undiscoverable —
+     * a player cannot tell the controls exist, or whether they failed to load.
+     * Showing them parked fixes both, and they still jump to wherever the
+     * thumb actually lands.
+     */
+    park() {
+        const h = window.innerHeight, w = window.innerWidth;
+        const y = h - 130;
+        this.parked = { move: { x: 150, y }, aim: { x: w - 150, y } };
+        for (const kind of ['move', 'aim']) {
+            const el = kind === 'move' ? this.moveEl : this.aimEl;
+            if (!el) continue;
+            el.classList.add('stick-idle');
+            this.showStick(kind, this.parked[kind].x, this.parked[kind].y, 0, 0);
+        }
     }
 
     onDown(e) {
@@ -53,8 +96,14 @@ class TouchControls {
         for (const p of this.pointers.values()) {
             if (p.kind === kind) return;
         }
-        this.root.setPointerCapture(e.pointerId);
+        // Capture keeps the stick tracking if the thumb slides off the layer,
+        // but it is a nice-to-have: some Android browsers throw here, and an
+        // exception would abort the handler and leave the stick invisible and
+        // unresponsive. Never let it break the control.
+        try { this.root.setPointerCapture(e.pointerId); } catch (_) { /* optional */ }
         this.pointers.set(e.pointerId, { kind, ox: e.clientX, oy: e.clientY });
+        const el = kind === 'move' ? this.moveEl : this.aimEl;
+        if (el) el.classList.remove('stick-idle');
         this.showStick(kind, e.clientX, e.clientY, 0, 0);
         if (kind === 'aim') this.input.mouseDown = true;
         this.apply(e.pointerId, e.clientX, e.clientY);
@@ -75,12 +124,11 @@ class TouchControls {
         if (p.kind === 'move') {
             this.input.moveX = 0;
             this.input.moveY = 0;
-            this.hideStick('move');
         } else {
             this.input.aimActive = false;
             this.input.mouseDown = false;
-            this.hideStick('aim');
         }
+        this.reparkStick(p.kind);
         e.preventDefault();
     }
 
@@ -135,9 +183,12 @@ class TouchControls {
             `translate(-50%, -50%) translate(${kx}px, ${ky}px)`;
     }
 
-    hideStick(kind) {
+    /** Return one stick to its dimmed resting position. */
+    reparkStick(kind) {
         const el = kind === 'move' ? this.moveEl : this.aimEl;
-        if (el) el.style.display = 'none';
+        if (!el || !this.parked) return;
+        el.classList.add('stick-idle');
+        this.showStick(kind, this.parked[kind].x, this.parked[kind].y, 0, 0);
     }
 
     /** Drop all touch input — used when focus or the game state is lost. */
@@ -147,7 +198,7 @@ class TouchControls {
         this.input.moveY = 0;
         this.input.aimActive = false;
         this.input.mouseDown = false;
-        this.hideStick('move');
-        this.hideStick('aim');
+        this.reparkStick('move');
+        this.reparkStick('aim');
     }
 }

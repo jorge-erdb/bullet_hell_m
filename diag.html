@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bullet Hell — Touch Diagnostics</title>
+<style>
+  :root { --ok:#7fbf3f; --bad:#e03b1e; --amber:#ffb000; --bone:#d8cfc0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0b0709; color: var(--bone);
+    font: 14px/1.7 ui-monospace, Menlo, Consolas, monospace;
+    padding: 16px; -webkit-text-size-adjust: 100%;
+  }
+  h1 { font-size: 17px; color: var(--amber); margin-bottom: 4px; }
+  .sub { color: #7a4a00; font-size: 12px; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 18px; }
+  td { padding: 7px 8px; border-bottom: 1px solid #241a18; vertical-align: top; }
+  td:first-child { color: #96775e; width: 46%; }
+  .ok  { color: var(--ok); font-weight: bold; }
+  .bad { color: var(--bad); font-weight: bold; }
+  #pad {
+    height: 190px; background: #140f10; border: 3px solid #5c4638;
+    display: flex; align-items: center; justify-content: center;
+    color: #5c4638; touch-action: none; user-select: none; margin-bottom: 12px;
+  }
+  #log {
+    background: #140f10; border: 3px solid #241a18; padding: 10px;
+    height: 190px; overflow-y: auto; font-size: 12px; white-space: pre-wrap;
+  }
+  .knob {
+    position: absolute; width: 90px; height: 90px; margin: -45px 0 0 -45px;
+    border-radius: 50%; border: 3px solid var(--amber);
+    background: rgba(255,176,0,.25); pointer-events: none; display: none;
+  }
+</style>
+</head>
+<body>
+<h1>Touch Diagnostics</h1>
+<p class="sub">Open this on the tablet. Screenshot the whole page.</p>
+
+<table id="report"></table>
+
+<div id="pad">drag here to test</div>
+<div id="knob" class="knob"></div>
+<div id="log">event log:
+</div>
+
+<script>
+const BUILD = 'touch-v2';
+const rows = [];
+const yn = (v) => v ? '<span class="ok">YES</span>' : '<span class="bad">NO</span>';
+function row(k, v) { rows.push(`<tr><td>${k}</td><td>${v}</td></tr>`); }
+
+// The exact check the game uses to decide whether to show the sticks.
+const hasOnTouchStart = ('ontouchstart' in window);
+const maxTouch = navigator.maxTouchPoints;
+const gameWouldShowSticks = hasOnTouchStart || maxTouch > 0;
+
+row('build marker', `<b>${BUILD}</b>`);
+row('game would show sticks', yn(gameWouldShowSticks));
+row("'ontouchstart' in window", yn(hasOnTouchStart));
+row('navigator.maxTouchPoints', maxTouch);
+row('window.PointerEvent', yn(typeof window.PointerEvent !== 'undefined'));
+row('window.TouchEvent', yn(typeof window.TouchEvent !== 'undefined'));
+row('setPointerCapture on div', yn(typeof document.createElement('div').setPointerCapture === 'function'));
+row('static class fields', (() => { try { eval('class T { static X = 1 }'); return yn(true); } catch (e) { return yn(false); } })());
+row('CSS inset supported', yn(CSS.supports && CSS.supports('inset', '0')));
+row('CSS image-rendering: pixelated', yn(CSS.supports && CSS.supports('image-rendering', 'pixelated')));
+row('viewport (CSS px)', `${window.innerWidth} x ${window.innerHeight}`);
+row('orientation', window.innerWidth >= window.innerHeight ? 'landscape' : '<span class="bad">PORTRAIT</span>');
+row('devicePixelRatio', window.devicePixelRatio);
+row('user agent', navigator.userAgent);
+document.getElementById('report').innerHTML = rows.join('');
+
+// Live pointer/touch test
+const log = document.getElementById('log');
+const knob = document.getElementById('knob');
+let n = 0;
+function say(s) {
+  if (++n > 40) { log.textContent = 'event log:\n'; n = 0; }
+  log.textContent += s + '\n';
+  log.scrollTop = log.scrollHeight;
+}
+const pad = document.getElementById('pad');
+
+if (typeof window.PointerEvent !== 'undefined') {
+  pad.addEventListener('pointerdown', (e) => {
+    let captured = 'n/a';
+    try { pad.setPointerCapture(e.pointerId); captured = 'ok'; }
+    catch (err) { captured = 'THREW: ' + err.name; }
+    say(`pointerdown id=${e.pointerId} type=${e.pointerType} capture=${captured}`);
+    knob.style.display = 'block';
+    knob.style.left = e.clientX + 'px';
+    knob.style.top = e.clientY + 'px';
+    e.preventDefault();
+  });
+  pad.addEventListener('pointermove', (e) => {
+    knob.style.left = e.clientX + 'px';
+    knob.style.top = e.clientY + 'px';
+    e.preventDefault();
+  });
+  pad.addEventListener('pointerup', (e) => {
+    say(`pointerup id=${e.pointerId}`);
+    knob.style.display = 'none';
+  });
+} else {
+  say('PointerEvent NOT supported — falling back to touch events');
+  pad.addEventListener('touchstart', (e) => {
+    say(`touchstart touches=${e.touches.length}`);
+    const t = e.touches[0];
+    knob.style.display = 'block';
+    knob.style.left = t.clientX + 'px';
+    knob.style.top = t.clientY + 'px';
+    e.preventDefault();
+  }, { passive: false });
+  pad.addEventListener('touchend', () => { say('touchend'); knob.style.display = 'none'; });
+}
+
+window.addEventListener('error', (e) => say('JS ERROR: ' + e.message));
+</script>
+</body>
+</html>
