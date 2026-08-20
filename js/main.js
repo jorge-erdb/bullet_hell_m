@@ -30,10 +30,19 @@
     let touch = null;
 
     // Initialize systems
+    const audio = new AudioSystem();
     const ui = new UI(canvas, minimapCanvas);
-    const game = new Game(canvas, ui);
+    const game = new Game(canvas, ui, audio);
+
+    // Music tracks are optional: drop files in audio/ and they play, otherwise
+    // the game runs with effects only.
+    audio.setTracks(['audio/track1', 'audio/track2', 'audio/track3']);
 
     function startGame() {
+        // Browsers start an AudioContext suspended; only a user gesture may
+        // resume it, so this has to happen here rather than at load.
+        audio.unlock();
+        audio.playMusic(0);
         requestFullscreenIfTouch();
         if (touch) touch.releaseAll();
         game.start();
@@ -112,6 +121,16 @@
         const fn = el.requestFullscreen || el.webkitRequestFullscreen;
         if (fn) { try { fn.call(el); } catch (_) { /* ignore */ } }
     }
+
+    // Sound toggle — works with mouse and touch alike
+    const muteBtn = document.getElementById('mute-btn');
+    muteBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        audio.unlock();
+        ui.setMuted(audio.toggleMute());
+        if (document.activeElement) document.activeElement.blur();
+    });
+    ui.setMuted(audio.muted);
 
     // Show start screen
     ui.showStart();

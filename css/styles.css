@@ -506,3 +506,28 @@ body.touch-device .rotate-gate { }
     letter-spacing: 0.18em;
     margin-top: 2.5em;
 }
+
+/* Sound toggle — mirrors the pause button so the two read as a pair. */
+.mute-btn {
+    position: absolute;
+    top: 14px;
+    left: 14px;
+    z-index: 70;
+    min-width: 52px;
+    height: 40px;
+    padding: 0 10px;
+    font-family: var(--font-pixel);
+    font-size: 0.5rem;
+    letter-spacing: 0.08em;
+    color: var(--amber);
+    background: var(--panel);
+    border: 0;
+    box-shadow:
+        inset 0 0 0 3px var(--wall),
+        inset 0 0 0 6px var(--void);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mute-btn.muted { color: #6b5347; }
+.mute-btn:active { color: #fff; background: var(--blood); }

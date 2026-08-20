@@ -25,9 +25,12 @@ const FIXED_STEP_MS = 1000 / 60;
 const MAX_CATCHUP_STEPS = 5;
 
 class Game {
-    constructor(canvas, ui) {
+    constructor(canvas, ui, audio) {
         this.canvas = canvas;
         this.ui = ui;
+        // Optional: a null-object fallback keeps every call site free of guards
+        // and lets the engine run headless in tests.
+        this.audio = audio || AudioSystem.silent();
         this.ctx = canvas.getContext('2d');
 
         // Game state
@@ -150,6 +153,7 @@ class Game {
         window.addEventListener('keydown', (e) => {
             this.input.keys[e.code] = true;
             if (e.code === 'Space') this.togglePause();
+            if (e.code === 'KeyM') this.ui.setMuted(this.audio.toggleMute());
         });
 
         window.addEventListener('keyup', (e) => {
@@ -335,6 +339,7 @@ class Game {
         if (shouldShoot) {
             const newBullets = this.player.shoot();
             this.bullets.push(...newBullets);
+            this.audio.shoot();
         }
 
         // Update enemies
@@ -342,7 +347,10 @@ class Game {
         for (const enemy of this.enemies) {
             if (!enemy.alive) continue;
             const bullets = enemy.update(this.player, this.enemies, this.map);
-            if (bullets) newEnemyBullets.push(...bullets);
+            if (bullets && bullets.length) {
+                newEnemyBullets.push(...bullets);
+                this.audio.enemyShoot();
+            }
         }
         this.enemyBullets.push(...newEnemyBullets);
 
@@ -396,6 +404,7 @@ class Game {
 
                     // Spawn hit particles
                     this.spawnParticles(bullet.x, bullet.y, enemy.color, 3);
+                    this.audio.enemyHit();
 
                     if (bullet.hits > bullet.pierce) {
                         toRemove.add(bullet);
@@ -436,7 +445,10 @@ class Game {
                 this.player.takeDamage(bullet.damage);
                 // Only react to damage that actually landed — takeDamage() is a
                 // no-op during invincibility frames.
-                if (this.player.health < before) this.addImpact(8, 6);
+                if (this.player.health < before) {
+                    this.addImpact(8, 6);
+                    this.audio.playerHurt();
+                }
                 this.spawnParticles(this.player.x, this.player.y, PALETTE.danger, 5);
                 bullet.damage = 0; // Mark as consumed
             }
@@ -471,6 +483,7 @@ class Game {
             if (dist < this.player.radius + orb.radius) {
                 if (this.player.gainXP(orb.value)) this.pendingLevelUps++;
                 this.spawnParticles(orb.x, orb.y, PALETTE.xp, 2);
+                this.audio.pickup();
                 orb.collected = true;
             }
         }
@@ -508,6 +521,7 @@ class Game {
         // Spawn death particles
         this.spawnParticles(enemy.x, enemy.y, enemy.color, 8);
         this.addImpact(enemy.type === 'boss' ? 7 : 2, 0);
+        this.audio.enemyDeath();
 
         // Drop XP orbs
         const orbCount = Math.max(1, Math.ceil(enemy.xpValue / 5));
@@ -582,6 +596,8 @@ class Game {
                         if (this.transitionAlpha >= 1) {
                             clearInterval(fadeInterval);
                             this.floor++;
+                            this.audio.descend();
+                            this.audio.nextTrack();
                             this.generateMap();
                             this.ui.drawNotification(this.ctx, `FLOOR ${this.floor}`);
                             this.transitionAlpha = 1;
@@ -627,6 +643,7 @@ class Game {
     /** Handle level up — show upgrade selection. */
     handleLevelUp() {
         this.state = 'LEVEL_UP';
+        this.audio.levelUp();
 
         // Pick 3 random upgrades
         const shuffled = [...this.upgrades].sort(() => Math.random() - 0.5);
@@ -657,6 +674,7 @@ class Game {
     /** Handle game over. */
     gameOver() {
         this.state = 'GAME_OVER';
+        this.audio.gameOver();
         this.ui.hideLevelUp();
         this.ui.showHUD(false);
         this.ui.showGameOver(this.player.level, this.roomsCleared, this.enemiesKilled, this.floor);

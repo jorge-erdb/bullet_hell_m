@@ -150,6 +150,14 @@ class UI {
         document.getElementById('pause-overlay').classList.add('hidden');
     }
 
+    /** Reflect mute state on the sound button. */
+    setMuted(muted) {
+        const btn = document.getElementById('mute-btn');
+        if (!btn) return;
+        btn.textContent = muted ? 'OFF' : 'SND';
+        btn.classList.toggle('muted', muted);
+    }
+
     /** Show/hide HUD. */
     showHUD(show) {
         const hud = document.getElementById('hud');
