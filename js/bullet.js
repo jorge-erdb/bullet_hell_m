@@ -19,22 +19,6 @@ function circleCollision(x1, y1, r1, x2, y2, r2) {
 }
 
 /**
- * Check if a player bullet hits any enemy.
- * @param {Object} bullet - player bullet
- * @param {Array} enemies - array of enemy objects
- * @returns {Object|null} - hit enemy or null
- */
-function bulletHitsEnemy(bullet, enemies) {
-    for (const enemy of enemies) {
-        if (enemy.health <= 0) continue;
-        if (circleCollision(bullet.x, bullet.y, bullet.radius, enemy.x, enemy.y, enemy.radius)) {
-            return enemy;
-        }
-    }
-    return null;
-}
-
-/**
  * Check if an enemy bullet hits the player.
  * @param {Object} bullet - enemy bullet
  * @param {Object} player - player object

@@ -21,7 +21,7 @@ class UI {
     }
 
     /** Update HUD bars from player data. */
-    updateHUD(player, map, gameDebug = null) {
+    updateHUD(player) {
         // HP bar
         const hpPercent = (player.health / player.maxHealth) * 100;
         this.hpBar.style.width = `${hpPercent}%`;

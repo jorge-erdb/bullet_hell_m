@@ -54,7 +54,6 @@ class Game {
 
         // Loop control
         this.loopRunning = false;
-        this.totalDamageAttempts = 0;
 
         // Bind input handlers
         this.bindInput();
@@ -86,7 +85,6 @@ class Game {
                 // Do NOT clear loopRunning here: loop() keeps calling
                 // requestAnimationFrame while PAUSED, so the chain is still
                 // alive. Clearing the flag lets startLoop() spawn a second one.
-                this.totalDamageAttempts = 0;
                 this.ui.hidePause();
             }
         });
@@ -138,7 +136,6 @@ class Game {
 
         this.state = 'PLAYING';
         this.loopRunning = false;
-        this.totalDamageAttempts = 0;
         this.pendingLevelUps = 0;
     }
 
@@ -264,7 +261,7 @@ class Game {
         }
 
         // Update HUD
-        this.ui.updateHUD(this.player, this.map, `invTimer: ${this.player.invincibleTimer} | enemyBullets: ${this.enemyBullets.length}`);
+        this.ui.updateHUD(this.player);
     }
 
     /** Update player bullets (movement + collision). */
@@ -304,7 +301,6 @@ class Game {
 
     /** Update enemy bullets (movement + collision with player). */
     updateEnemyBullets() {
-        let hitsThisFrame = 0;
         for (const bullet of this.enemyBullets) {
             bullet.x += bullet.vx;
             bullet.y += bullet.vy;
@@ -314,15 +310,6 @@ class Game {
                 this.player.takeDamage(bullet.damage);
                 this.spawnParticles(this.player.x, this.player.y, '#ff4444', 5);
                 bullet.damage = 0; // Mark as consumed
-                hitsThisFrame++;
-            }
-        }
-
-        // Debug: log hit info every 60 frames
-        if (this.frameCount % 60 === 0) {
-            const debugEl = document.getElementById('debug-info');
-            if (debugEl) {
-                debugEl.textContent = `invTimer: ${this.player.invincibleTimer} | hits/frame: ~${hitsThisFrame} | enemyBullets: ${this.enemyBullets.length}`;
             }
         }
 
@@ -472,7 +459,6 @@ class Game {
                                 if (this.transitionAlpha <= 0) {
                                     this.transitioning = false;
                                     this.transitionAlpha = 0;
-                                    this.totalDamageAttempts = 0;
                                     this.state = 'PLAYING';
                                     clearInterval(fadeBack);
                                     // Restart the game loop so player can continue playing
@@ -533,7 +519,6 @@ class Game {
         this.ui.hideLevelUp();
         // Same as unpause: the LEVEL_UP branch of loop() never stopped the RAF
         // chain, so loopRunning must stay true.
-        this.totalDamageAttempts = 0;
         this.state = 'PLAYING';
     }
 
@@ -544,7 +529,6 @@ class Game {
         this.ui.showHUD(false);
         this.ui.showGameOver(this.player.level, this.roomsCleared, this.enemiesKilled);
         this.loopRunning = false;
-        this.totalDamageAttempts = 0;
     }
 
     /** Render the game. */
