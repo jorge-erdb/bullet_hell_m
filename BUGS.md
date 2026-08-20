@@ -188,42 +188,78 @@ debugging path is part of the record, not noise.
   dealt; a bullet on open floor is not removed spuriously.
 - **Status:** ✅ Fixed.
 
-### 10. `gameOver()` left the level-up screen visible 🟡
+### 10. Game speed was tied to the display's refresh rate 🔴
+- **File:** `js/game.js` — `loop()` / `update()`
+- **Symptom:** The game ran faster on higher-refresh displays. Everything
+  scaled together — movement, fire rate, bullet speed, invincibility windows,
+  the difficulty ramp — so it read as "the pacing is too fast" rather than as
+  a bug.
+- **Cause:** `loop()` computed `dt` and passed it to `update(dt)`, which never
+  used it. Every value was applied per rendered frame, so the simulation rate
+  *was* the refresh rate.
+- **Measured before the fix:** 272 px/s at 60 Hz, 540 at 120 Hz, 704 at 144 Hz
+  — a 2.6× spread.
+- **Fix:** a fixed-timestep accumulator. The simulation steps at a constant
+  60 Hz while rendering stays once per animation frame. A fixed step was chosen
+  over a `dt` multiplier because every gameplay value in this project is a
+  frame count; scaling by `dt` would have required rescaling each one and would
+  have silently changed the existing tuning.
+- **Verified after the fix:** 270 px/s at 30, 60, 90, 120, 144 and 240 Hz — an
+  8× refresh range at one speed (±2%, a single step landing across the sample
+  boundary). Frames rendered still scale 16 → 122, so high-refresh displays stay
+  smooth. Difficulty-ramp values are unchanged, confirming tuning was preserved.
+- **Status:** ✅ Fixed.
+
+### 11. Input stuck on lost focus 🟡
+- **File:** `js/game.js` — `bindInput()`
+- **Symptom:** Holding a movement key and switching windows left the player
+  walking on their own after returning. Releasing the mouse button after moving
+  the cursor off the canvas left the player firing indefinitely.
+- **Cause:** `keyup` only arrives if the window has focus when the key is
+  released, and `mouseup` was bound to the canvas, so a release anywhere else
+  was never seen.
+- **Fix:** `mouseup` moved to the window, plus a `blur` handler that clears all
+  held keys and the mouse state.
+- **Verified:** a key held across a `blur` event is cleared with 0 px of drift;
+  a button released off-canvas clears `mouseDown`.
+- **Status:** ✅ Fixed.
+
+### 12. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 11. Game loop never stopped after game over 🟡
+### 13. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 12. Player could act during room transitions 🟡
+### 14. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 13. Confirm button worked with no upgrade selected 🟢
+### 15. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 14. Only one upgrade shown for a multi-level XP gain 🟢
+### 16. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 15. Redundant `Game.level` 🟢
+### 17. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 16. Over-generous bullet cleanup margin 🟢
+### 18. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 17. Confusing "Full Heal" upgrade 🟢
+### 19. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 18. Debug scaffolding shipped in the build 🟢
+### 20. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -238,6 +274,6 @@ debugging path is part of the record, not noise.
 
 | Severity | Open | Fixed |
 |---|---|---|
-| 🔴 Critical | 0 | 5 |
-| 🟡 Moderate | 0 | 6 |
+| 🔴 Critical | 0 | 6 |
+| 🟡 Moderate | 0 | 7 |
 | 🟢 Minor | 3 | 7 |

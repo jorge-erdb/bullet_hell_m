@@ -1,6 +1,29 @@
 /**
  * Game class — main engine: state machine, entity management, rendering, collision.
  */
+
+/**
+ * Simulation timing.
+ *
+ * The engine steps at a fixed logical rate rather than once per rendered frame.
+ * Every gameplay value in this project is expressed in frames — movement per
+ * tick, fireRate, invincibleTimer, shootCooldown, particle life, the floor
+ * difficulty ramp — so a fixed step preserves all of them exactly while making
+ * real elapsed time, not the display's refresh rate, decide how fast the game
+ * runs. Rendering still happens once per animation frame, so a 144 Hz display
+ * renders a 60 Hz simulation smoothly.
+ */
+const FIXED_STEP_MS = 1000 / 60;
+
+/**
+ * Cap on simulation steps per rendered frame. Without it, a long stall (tab
+ * restored, laptop woken, debugger resumed) hands the loop a huge elapsed time,
+ * which costs more than a frame to simulate, which grows the next elapsed time
+ * — the classic spiral of death. Past this cap the extra time is dropped: the
+ * game skips ahead rather than locking up.
+ */
+const MAX_CATCHUP_STEPS = 5;
+
 class Game {
     constructor(canvas, ui) {
         this.canvas = canvas;
@@ -11,6 +34,9 @@ class Game {
         this.state = 'START'; // START, PLAYING, LEVEL_UP, PAUSED, TRANSITIONING, GAME_OVER
         this.lastTime = 0;
         this.frameCount = 0;
+
+        // Unspent real time owed to the simulation, in ms.
+        this.accumulator = 0;
 
         // Input
         this.input = {
@@ -106,8 +132,18 @@ class Game {
             if (e.button === 0) this.input.mouseDown = true;
         });
 
-        this.canvas.addEventListener('mouseup', (e) => {
+        // Bound to the window, not the canvas: releasing the button after the
+        // cursor has left the canvas otherwise never clears mouseDown, and the
+        // player keeps firing.
+        window.addEventListener('mouseup', (e) => {
             if (e.button === 0) this.input.mouseDown = false;
+        });
+
+        // A key held while the window loses focus never receives its keyup, so
+        // the player walks off on their own after alt-tab. Drop all input.
+        window.addEventListener('blur', () => {
+            this.input.keys = {};
+            this.input.mouseDown = false;
         });
 
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -195,6 +231,7 @@ class Game {
     /** Start the game loop. */
     startLoop() {
         this.lastTime = performance.now();
+        this.accumulator = 0;
         if (this.loopRunning) return;
         this.loopRunning = true;
         this.loop(this.lastTime);
@@ -202,18 +239,40 @@ class Game {
 
     /** Main game loop. */
     loop(timestamp) {
-        const dt = timestamp - this.lastTime;
+        const elapsed = timestamp - this.lastTime;
         this.lastTime = timestamp;
         this.frameCount++;
 
         if (this.state === 'PLAYING') {
-            this.update(dt);
+            this.accumulator += elapsed;
+
+            // Drain the owed time in fixed steps. update() can change state
+            // mid-drain (level up, death, room transition), and continuing to
+            // simulate 'PLAYING' after that would run frames the new state is
+            // supposed to have paused — so stop as soon as it does.
+            let steps = 0;
+            while (this.accumulator >= FIXED_STEP_MS &&
+                   this.state === 'PLAYING' &&
+                   steps < MAX_CATCHUP_STEPS) {
+                this.accumulator -= FIXED_STEP_MS;
+                steps++;
+                this.update();
+            }
+
+            // Discard anything left over the cap instead of banking it.
+            if (this.accumulator > FIXED_STEP_MS * MAX_CATCHUP_STEPS) {
+                this.accumulator = 0;
+            }
+
             this.render();
         } else if (this.state === 'TRANSITIONING') {
-            this.render(); // Keep rendering, just don't update
+            this.accumulator = 0; // don't bank time while not simulating
+            this.render();        // Keep rendering, just don't update
         } else if (this.state === 'PAUSED') {
-            this.render(); // Keep rendering, just don't update
+            this.accumulator = 0; // otherwise unpausing fast-forwards the pause
+            this.render();        // Keep rendering, just don't update
         } else if (this.state === 'LEVEL_UP') {
+            this.accumulator = 0;
             this.render(); // Keep last frame visible while player chooses upgrade
         } else if (this.state === 'GAME_OVER') {
             this.render(); // Keep last frame visible
@@ -223,8 +282,8 @@ class Game {
         requestAnimationFrame((t) => this.loop(t));
     }
 
-    /** Update all game systems. */
-    update(dt) {
+    /** Advance the simulation by exactly one fixed step. */
+    update() {
         // Update camera to follow player (must be before player.update for correct aim)
         this.camera.x = this.player.x - this.canvas.width / 2;
         this.camera.y = this.player.y - this.canvas.height / 2;

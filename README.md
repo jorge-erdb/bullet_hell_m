@@ -85,6 +85,24 @@ scheduling a second chain. Two concurrent chains would advance timers at double
 speed and draw twice per frame — the cause of a long-lived flickering bug during
 development (see [BUGS.md](BUGS.md)).
 
+### Simulation timing
+
+The engine steps at a fixed logical rate (`FIXED_STEP_MS`, 60 Hz) rather than
+once per rendered frame, with an accumulator draining real elapsed time into
+whole steps. Rendering still happens once per animation frame, so a 144 Hz
+display shows a 60 Hz simulation smoothly.
+
+A fixed step rather than a `dt` multiplier is deliberate. Every gameplay value
+here is expressed in frames — movement per tick, `fireRate`, `invincibleTimer`,
+`shootCooldown`, particle `life`, the floor difficulty ramp — so a fixed step
+preserves all of them exactly, where scaling by `dt` would mean correctly
+rescaling each one and silently changing the tuning.
+
+`MAX_CATCHUP_STEPS` caps steps per frame. Without it a long stall (tab
+restored, laptop woken) hands the loop a huge elapsed time, which costs more
+than a frame to simulate, which grows the next elapsed time — the spiral of
+death. Past the cap the extra time is dropped.
+
 ### Coordinate spaces
 
 The world is 7000×7000 px; the canvas is a window onto it. The camera follows
