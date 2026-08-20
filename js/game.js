@@ -43,7 +43,14 @@ class Game {
             keys: {},
             mouseX: 0,
             mouseY: 0,
-            mouseDown: false
+            mouseDown: false,
+            // Analogue touch state. moveX/moveY are a clamped vector; aimX/aimY
+            // are a unit direction that only counts while aimActive.
+            moveX: 0,
+            moveY: 0,
+            aimX: 0,
+            aimY: -1,
+            aimActive: false
         };
 
         // Camera
@@ -107,6 +114,23 @@ class Game {
     }
 
     /**
+     * Pause or resume. Shared by the Space key and the on-screen touch button.
+     *
+     * loopRunning is deliberately left alone: loop() keeps calling
+     * requestAnimationFrame while PAUSED, so the chain is still alive, and
+     * clearing the flag would let startLoop() spawn a second one.
+     */
+    togglePause() {
+        if (this.state === 'PLAYING') {
+            this.state = 'PAUSED';
+            this.ui.showPause();
+        } else if (this.state === 'PAUSED') {
+            this.state = 'PLAYING';
+            this.ui.hidePause();
+        }
+    }
+
+    /**
      * Visible world size, in world units.
      *
      * The backing store is PIXEL_SIZE times smaller than the window, so canvas
@@ -125,16 +149,7 @@ class Game {
     bindInput() {
         window.addEventListener('keydown', (e) => {
             this.input.keys[e.code] = true;
-            if (e.code === 'Space' && this.state === 'PLAYING') {
-                this.state = 'PAUSED';
-                this.ui.showPause();
-            } else if (e.code === 'Space' && this.state === 'PAUSED') {
-                this.state = 'PLAYING';
-                // Do NOT clear loopRunning here: loop() keeps calling
-                // requestAnimationFrame while PAUSED, so the chain is still
-                // alive. Clearing the flag lets startLoop() spawn a second one.
-                this.ui.hidePause();
-            }
+            if (e.code === 'Space') this.togglePause();
         });
 
         window.addEventListener('keyup', (e) => {
@@ -163,6 +178,9 @@ class Game {
         window.addEventListener('blur', () => {
             this.input.keys = {};
             this.input.mouseDown = false;
+            this.input.moveX = 0;
+            this.input.moveY = 0;
+            this.input.aimActive = false;
         });
 
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -207,7 +225,7 @@ class Game {
 
     /** Generate a new map and populate it. */
     generateMap() {
-        this.map = new Map(7000, 7000);
+        this.map = new DungeonMap(7000, 7000);
         this.map.generate();
 
         // Place player at start

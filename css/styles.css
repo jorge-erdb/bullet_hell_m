@@ -341,3 +341,154 @@ canvas#game {
 @media (prefers-reduced-motion: reduce) {
     .bar { transition: none; }
 }
+
+/* =========================================================================
+   Touch controls — twin-stick, landscape only
+   ========================================================================= */
+
+/* Stop the browser treating the play surface as a scrollable document:
+   no pull-to-refresh, no rubber-banding, no double-tap zoom. */
+body.touch-device {
+    overscroll-behavior: none;
+    touch-action: none;
+}
+
+.touch-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.touch-layer.hidden { display: none; }
+
+/* Floating sticks: positioned at the thumb by JS, hidden until touched. */
+.stick {
+    position: absolute;
+    width: 136px;
+    height: 136px;
+    margin-left: -68px;
+    margin-top: -68px;
+    border-radius: 50%;
+    display: none;
+    pointer-events: none;
+    background: rgba(20, 15, 16, 0.4);
+    box-shadow: inset 0 0 0 3px rgba(92, 70, 56, 0.75);
+}
+
+.stick-knob {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 54px;
+    height: 54px;
+    margin: 0;
+    border-radius: 50%;
+    background: rgba(255, 176, 0, 0.30);
+    box-shadow: inset 0 0 0 3px var(--amber);
+    transform: translate(-50%, -50%);
+}
+
+/* The firing stick reads hot so the two thumbs are never confused. */
+.stick-fire {
+    box-shadow: inset 0 0 0 3px rgba(160, 28, 28, 0.8);
+    background: rgba(40, 10, 10, 0.4);
+}
+
+.stick-fire .stick-knob {
+    background: rgba(224, 59, 30, 0.35);
+    box-shadow: inset 0 0 0 3px var(--fire);
+}
+
+.touch-pause {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 70;
+    width: 52px;
+    height: 52px;
+    font-family: var(--font-pixel);
+    font-size: 0.7rem;
+    letter-spacing: 0.08em;
+    color: var(--amber);
+    background: var(--panel);
+    border: 0;
+    box-shadow:
+        inset 0 0 0 3px var(--wall),
+        inset 0 0 0 6px var(--void);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.touch-pause.hidden { display: none; }
+.touch-pause:active { color: #fff; background: var(--blood); }
+
+/* ===== Portrait gate =====
+   Twin-stick needs the horizontal room, and a portrait viewport puts both
+   thumbs over the play area. Shown only on touch devices in portrait. */
+.rotate-gate {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 200;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    text-align: center;
+    padding: 24px;
+    background: var(--void);
+}
+
+body.touch-device .rotate-gate { }
+
+@media (orientation: portrait) {
+    body.touch-device .rotate-gate { display: flex; }
+    /* Hide the HUD and touch layer so nothing is interactable behind the gate */
+    body.touch-device .hud,
+    body.touch-device .touch-layer,
+    body.touch-device .touch-pause { display: none; }
+}
+
+.rotate-icon {
+    font-size: 4rem;
+    color: var(--amber);
+    animation: rotate-hint 2.4s ease-in-out infinite;
+}
+
+.rotate-text {
+    font-size: 0.72rem;
+    color: var(--bone);
+    letter-spacing: 0.1em;
+    line-height: 2;
+}
+
+.rotate-sub {
+    font-size: 0.48rem;
+    color: var(--amber-dim);
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+}
+
+@keyframes rotate-hint {
+    0%, 45%   { transform: rotate(0deg); }
+    55%, 100% { transform: rotate(-90deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .rotate-icon { animation: none; }
+}
+
+/* On short landscape viewports (phones), pull the HUD in so the sticks and
+   the status panel do not fight for the same corner. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .hud-left { min-width: 220px; padding: 8px 12px; }
+    .bar-track { height: 10px; }
+    .bar-text { min-width: 92px; font-size: 0.38rem; }
+    .stats-display { font-size: 0.36rem; }
+    #minimap { width: 96px; height: 96px; }
+    .controls-info { display: none; }
+}

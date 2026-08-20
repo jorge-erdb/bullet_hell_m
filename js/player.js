@@ -68,18 +68,27 @@ class Player {
 
     /** Update player position and shooting. */
     update(input, camera, map) {
-        // Movement
+        // Movement — an analogue stick wins if it is deflected, otherwise keys.
         let dx = 0, dy = 0;
-        if (input.keys['KeyW'] || input.keys['ArrowUp'])    dy -= 1;
-        if (input.keys['KeyS'] || input.keys['ArrowDown'])  dy += 1;
-        if (input.keys['KeyA'] || input.keys['ArrowLeft'])  dx -= 1;
-        if (input.keys['KeyD'] || input.keys['ArrowRight']) dx += 1;
+        if (input.moveX || input.moveY) {
+            dx = input.moveX;
+            dy = input.moveY;
+            // A stick is already a vector; clamp rather than normalise so
+            // partial deflection stays a partial walk.
+            const mag = Math.hypot(dx, dy);
+            if (mag > 1) { dx /= mag; dy /= mag; }
+        } else {
+            if (input.keys['KeyW'] || input.keys['ArrowUp'])    dy -= 1;
+            if (input.keys['KeyS'] || input.keys['ArrowDown'])  dy += 1;
+            if (input.keys['KeyA'] || input.keys['ArrowLeft'])  dx -= 1;
+            if (input.keys['KeyD'] || input.keys['ArrowRight']) dx += 1;
 
-        // Normalize diagonal
-        if (dx !== 0 && dy !== 0) {
-            const inv = 1 / Math.SQRT2;
-            dx *= inv;
-            dy *= inv;
+            // Normalize diagonal
+            if (dx !== 0 && dy !== 0) {
+                const inv = 1 / Math.SQRT2;
+                dx *= inv;
+                dy *= inv;
+            }
         }
 
         // Resolve each axis separately so that running into a wall diagonally
@@ -99,8 +108,12 @@ class Player {
             this.y += dy * this.speed;
         }
 
-        // Aim direction — convert screen-space mouse to world-space
-        if (input.mouseX !== undefined) {
+        // Aim direction. A touch stick supplies a direction outright; the
+        // mouse supplies a screen point that has to be converted to world space.
+        if (input.aimActive) {
+            this.aimX = input.aimX;
+            this.aimY = input.aimY;
+        } else if (input.mouseX !== undefined) {
             const worldMouseX = camera ? camera.x + input.mouseX : input.mouseX;
             const worldMouseY = camera ? camera.y + input.mouseY : input.mouseY;
             const adx = worldMouseX - this.x;

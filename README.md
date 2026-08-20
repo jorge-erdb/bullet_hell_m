@@ -26,12 +26,27 @@ regenerate a fresh dungeon and keep your build. Die and the run ends.
 
 ## Controls
 
+**Keyboard and mouse**
+
 | Input | Action |
 |---|---|
 | `W` `A` `S` `D` / arrows | Move |
 | Mouse | Aim |
 | Left click (hold) | Shoot |
 | `Space` | Pause / resume |
+
+**Touch — twin-stick, landscape only**
+
+| Input | Action |
+|---|---|
+| Left half of screen | Move |
+| Right half of screen | Aim, and fire while held |
+| Pause button, top right | Pause |
+
+Both sticks *float*: they appear wherever the thumb lands rather than at a
+fixed spot, which is what makes them usable without looking down. A portrait
+viewport shows a rotate prompt instead — a bullet hell needs simultaneous
+movement and aim, and portrait puts both thumbs over the play area.
 
 ## Running it locally
 
@@ -59,8 +74,9 @@ js/
   player.js         Player state, movement, aim, shooting, XP curve, rendering
   bullet.js         Shared collision helpers and off-map cleanup
   enemy.js          Enemy base class + Basic / Shooter / Spiral / Boss subclasses
-  map.js            Procedural generation, room typing, spawn tables, world + minimap drawing
+  map.js            DungeonMap: procedural generation, room typing, spawn tables, world drawing
   palette.js        Colour identity and the pixel-grid constants + draw helpers
+  touch.js          Twin-stick touch controls, landscape only
   ui.js             DOM HUD updates, minimap, overlay show/hide, canvas notifications
   game.js           The engine: state machine, game loop, collisions, camera, orchestration
   main.js           Bootstrap — builds the objects and wires up the buttons
@@ -110,6 +126,19 @@ Floors are filled by `Map.fillFloor()`, whose checkerboard phase comes from
 *global* tile coordinates rather than each rectangle's own origin. That is what
 lets rooms and corridors be filled independently and still seam invisibly —
 necessary because corridors run centre-to-centre and so cross room interiors.
+
+### Input abstraction
+
+Touch writes analogue `moveX/moveY` and `aimX/aimY` into the same `input`
+object the keyboard and mouse use, so the rest of the engine never learns that
+touch exists. `Player.update()` prefers the stick when it is deflected and
+falls back to keys otherwise; aim takes a direction outright from a stick,
+where the mouse supplies a screen point that must be converted to world space.
+
+One naming trap worth knowing: the dungeon class is `DungeonMap`, not `Map`. A
+top-level `class Map` in a classic script shadows the built-in `Map` for every
+other script on the page, so an innocent `new Map()` anywhere in the project
+silently returns a dungeon with no `.get`/`.set`/`.clear`.
 
 ### Simulation timing
 

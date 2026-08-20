@@ -26,11 +26,16 @@
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
 
+    // Declared before the button handlers below, which capture it.
+    let touch = null;
+
     // Initialize systems
     const ui = new UI(canvas, minimapCanvas);
     const game = new Game(canvas, ui);
 
     function startGame() {
+        requestFullscreenIfTouch();
+        if (touch) touch.releaseAll();
         game.start();
         game.startLoop();
         // Blur any focused element so keyboard events reach window listeners
@@ -52,8 +57,11 @@
 
     document.getElementById('resume-btn').addEventListener('click', (e) => {
         e.preventDefault();
-        game.state = 'PLAYING';
-        ui.hidePause();
+        // Go through togglePause() rather than setting state directly, so the
+        // button and the Space key can never drift apart.
+        game.togglePause();
+        // The thumb that tapped Resume must not be left registered as held.
+        if (touch) touch.releaseAll();
         if (document.activeElement) document.activeElement.blur();
     });
 
@@ -61,6 +69,49 @@
         e.preventDefault();
         game.applyUpgrade();
     });
+
+    // ===== Touch =====
+    const touchLayer = document.getElementById('touch-layer');
+    const touchPause = document.getElementById('touch-pause');
+
+    if (TouchControls.isTouchDevice()) {
+        document.body.classList.add('touch-device');
+        touchLayer.classList.remove('hidden');
+        touchPause.classList.remove('hidden');
+        touch = new TouchControls(game.input, touchLayer);
+
+        touchPause.addEventListener('click', (e) => {
+            e.preventDefault();
+            game.togglePause();
+            if (touch) touch.releaseAll();
+        });
+
+        // A backgrounded tab never delivers pointerup, so the thumb would stay
+        // "down" on return. Drop everything when visibility is lost.
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && touch) touch.releaseAll();
+        });
+
+        // Orientation changes report the new size late on some devices, so
+        // resize again on the next frame as well as immediately.
+        window.addEventListener('orientationchange', () => {
+            resizeCanvas();
+            requestAnimationFrame(resizeCanvas);
+            setTimeout(resizeCanvas, 250);
+        });
+    }
+
+    /**
+     * Ask for fullscreen on a touch device. Must be called from inside a user
+     * gesture, and is best-effort: iOS Safari does not implement it for
+     * arbitrary elements, so a rejection is normal and not worth surfacing.
+     */
+    function requestFullscreenIfTouch() {
+        if (!touch || document.fullscreenElement) return;
+        const el = document.documentElement;
+        const fn = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (fn) { try { fn.call(el); } catch (_) { /* ignore */ } }
+    }
 
     // Show start screen
     ui.showStart();

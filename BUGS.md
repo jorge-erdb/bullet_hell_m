@@ -216,42 +216,57 @@ debugging path is part of the record, not noise.
   a button released off-canvas clears `mouseDown`.
 - **Status:** ✅ Fixed.
 
-### 12. `gameOver()` left the level-up screen visible 🟡
+### 12. `class Map` shadowed the built-in `Map` 🟡
+- **File:** `js/map.js`
+- **Symptom:** `new Map()` in `js/touch.js` produced an object with no
+  `.clear()`, crashing the touch controls with
+  `this.pointers.clear is not a function`.
+- **Cause:** a top-level `class Map` in a classic script creates a global
+  lexical binding that shadows the built-in `Map` for *every* script on the
+  page. Any `new Map()` anywhere in the project silently returned a dungeon.
+  (`globalThis.Map` still resolved to the native constructor, which is what
+  made the failure so confusing.)
+- **Fix:** renamed the class to `DungeonMap`. Only two call sites existed, so
+  the rename was cheap — and left in place it would have kept producing this
+  bug, since `new Map()` is such ordinary code.
+- **Status:** ✅ Fixed.
+
+### 13. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 13. Game loop never stopped after game over 🟡
+### 14. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 14. Player could act during room transitions 🟡
+### 15. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 15. Confirm button worked with no upgrade selected 🟢
+### 16. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 16. Only one upgrade shown for a multi-level XP gain 🟢
+### 17. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 17. Redundant `Game.level` 🟢
+### 18. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 18. Over-generous bullet cleanup margin 🟢
+### 19. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 19. Confusing "Full Heal" upgrade 🟢
+### 20. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 20. Debug scaffolding shipped in the build 🟢
+### 21. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -267,5 +282,5 @@ debugging path is part of the record, not noise.
 | Severity | Open | Fixed |
 |---|---|---|
 | 🔴 Critical | 0 | 6 |
-| 🟡 Moderate | 0 | 7 |
+| 🟡 Moderate | 0 | 8 |
 | 🟢 Minor | 3 | 7 |

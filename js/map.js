@@ -3,9 +3,14 @@
  */
 
 /**
- * Map class — represents a procedurally generated dungeon floor.
+ * DungeonMap — a procedurally generated dungeon floor.
+ *
+ * Named DungeonMap, not Map: a top-level `class Map` in a classic script
+ * shadows the built-in Map for every other script on the page, so an innocent
+ * `new Map()` anywhere in the project silently returns a dungeon with no
+ * .get/.set/.clear. That is exactly how it bit the touch controls.
  */
-class Map {
+class DungeonMap {
     constructor(width = 2000, height = 2000) {
         this.width = width;
         this.height = height;

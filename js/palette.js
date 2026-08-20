@@ -26,7 +26,7 @@ const PALETTE = {
     floorGrime:  '#1b1513',
     wall:        '#5c4638',
     wallLit:     '#8a6a52',
-    corridor:    '#2a211d',  // same as floorDark; see Map.fillFloor()
+    corridor:    '#2a211d',  // same as floorDark; see DungeonMap.fillFloor()
 
     // Player
     player:      '#e8dcc8',  // bone

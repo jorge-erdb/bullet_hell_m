@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="mobile-web-app-capable" content="yes">
     <title>Bullet Hell — Procedural Dodge Action</title>
     <meta name="description" content="A browser bullet hell with procedurally generated dungeons, roguelite upgrades and hand-rolled canvas rendering. No engine, no dependencies.">
     <meta name="theme-color" content="#0a0a0f">
@@ -91,6 +92,20 @@
         <button id="resume-btn" class="btn">Resume</button>
     </div>
 
+    <!-- Touch layer: only shown on touch devices, see main.js -->
+    <div id="touch-layer" class="touch-layer hidden">
+        <div id="stick-move" class="stick"><div class="stick-knob"></div></div>
+        <div id="stick-aim" class="stick stick-fire"><div class="stick-knob"></div></div>
+    </div>
+    <button id="touch-pause" class="touch-pause hidden" aria-label="Pause">II</button>
+
+    <!-- Portrait gate: twin-stick needs the width -->
+    <div id="rotate-gate" class="rotate-gate">
+        <div class="rotate-icon">◱</div>
+        <p class="rotate-text">Rotate your device</p>
+        <p class="rotate-sub">Landscape only</p>
+    </div>
+
     <script src="js/palette.js"></script>
     <script src="js/player.js"></script>
     <script src="js/bullet.js"></script>
@@ -98,6 +113,7 @@
     <script src="js/map.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/game.js"></script>
+    <script src="js/touch.js"></script>
     <script src="js/main.js"></script>
 </body>
 </html>
