@@ -157,52 +157,26 @@ class Player {
 
     /** Draw the player. */
     draw(ctx) {
-        // Invincibility flash
+        // Invincibility blink — skip whole frames rather than fading, which is
+        // both more readable and more in keeping with the era.
         if (this.invincibleTimer > 0 && Math.floor(this.invincibleTimer / 3) % 2 === 0) {
-            ctx.globalAlpha = 0.4;
+            return;
         }
 
-        // Body — blue circle
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = '#2196f3';
-        ctx.fill();
-        ctx.strokeStyle = '#64b5f6';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        const r = this.radius;
 
-        // Invincibility glow
-        if (this.invincibleTimer > 0) {
-            ctx.beginPath();
-            ctx.arc(this.x, this.y, this.radius + 4, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-        }
+        // Aim indicator first, so the body sits on top of it
+        const ax = this.x + this.aimX * (r + 12);
+        const ay = this.y + this.aimY * (r + 12);
+        pixelRect(ctx, ax, ay, 6, 6, PALETTE.playerAim);
 
-        ctx.globalAlpha = 1;
+        // Body: dark outline, bone plate, amber core
+        pixelRect(ctx, this.x, this.y, r * 2 + 4, r * 2 + 4, PALETTE.void);
+        pixelRect(ctx, this.x, this.y, r * 2, r * 2, PALETTE.player);
+        pixelRect(ctx, this.x, this.y, r, r, PALETTE.playerCore);
 
-        // Aim indicator — line from center outward
-        const aimLen = 20;
-        ctx.beginPath();
-        ctx.moveTo(this.x, this.y);
-        ctx.lineTo(
-            this.x + this.aimX * aimLen,
-            this.y + this.aimY * aimLen
-        );
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-
-        // Aim dot
-        ctx.beginPath();
-        ctx.arc(
-            this.x + this.aimX * aimLen,
-            this.y + this.aimY * aimLen,
-            3, 0, Math.PI * 2
-        );
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-        ctx.fill();
+        // Muzzle stub pointing where shots will go
+        pixelRect(ctx, this.x + this.aimX * r, this.y + this.aimY * r, 7, 7, PALETTE.playerCore);
     }
 
     /** Get current stat display string. */

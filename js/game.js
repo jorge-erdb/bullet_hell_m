@@ -49,6 +49,10 @@ class Game {
         // Camera
         this.camera = { x: 0, y: 0 };
 
+        // Impact feedback: frames of screen shake and of red damage flash left.
+        this.shake = 0;
+        this.damageFlash = 0;
+
         // Entities
         this.player = null;
         this.enemies = [];
@@ -102,6 +106,21 @@ class Game {
         ];
     }
 
+    /**
+     * Visible world size, in world units.
+     *
+     * The backing store is PIXEL_SIZE times smaller than the window, so canvas
+     * dimensions are not world dimensions — camera maths must use these.
+     */
+    get viewWidth()  { return this.canvas.width * PIXEL_SIZE; }
+    get viewHeight() { return this.canvas.height * PIXEL_SIZE; }
+
+    /** Kick the camera and flash the screen — called on player damage. */
+    addImpact(shakeFrames, flashFrames) {
+        this.shake = Math.max(this.shake, shakeFrames);
+        this.damageFlash = Math.max(this.damageFlash, flashFrames);
+    }
+
     /** Set up input event listeners. */
     bindInput() {
         window.addEventListener('keydown', (e) => {
@@ -148,11 +167,7 @@ class Game {
 
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-        // Resize
-        window.addEventListener('resize', () => {
-            this.canvas.width = window.innerWidth;
-            this.canvas.height = window.innerHeight;
-        });
+        // Canvas resizing lives in main.js, which owns the pixel-grid sizing.
     }
 
     /** Start a new game. */
@@ -239,7 +254,10 @@ class Game {
 
     /** Main game loop. */
     loop(timestamp) {
-        const elapsed = timestamp - this.lastTime;
+        // Clamp to non-negative: a stale or differently-based timestamp would
+        // otherwise drive the accumulator negative and stall the simulation
+        // while rendering carried on, which looks like a total freeze.
+        const elapsed = Math.max(0, timestamp - this.lastTime);
         this.lastTime = timestamp;
         this.frameCount++;
 
@@ -285,12 +303,12 @@ class Game {
     /** Advance the simulation by exactly one fixed step. */
     update() {
         // Update camera to follow player (must be before player.update for correct aim)
-        this.camera.x = this.player.x - this.canvas.width / 2;
-        this.camera.y = this.player.y - this.canvas.height / 2;
+        this.camera.x = this.player.x - this.viewWidth / 2;
+        this.camera.y = this.player.y - this.viewHeight / 2;
 
         // Clamp camera to map bounds
-        this.camera.x = Math.max(0, Math.min(this.camera.x, this.map.width - this.canvas.width));
-        this.camera.y = Math.max(0, Math.min(this.camera.y, this.map.height - this.canvas.height));
+        this.camera.x = Math.max(0, Math.min(this.camera.x, this.map.width - this.viewWidth));
+        this.camera.y = Math.max(0, Math.min(this.camera.y, this.map.height - this.viewHeight));
 
         // Update player (includes its own bounds clamping)
         const shouldShoot = this.player.update(this.input, this.camera, this.map);
@@ -319,6 +337,10 @@ class Game {
         // Update XP orbs (may trigger level up → changes state)
         this.updateXPOrbs();
         if (this.state !== 'PLAYING') return; // Level up or game over triggered
+
+        // Decay impact feedback
+        if (this.shake > 0) this.shake--;
+        if (this.damageFlash > 0) this.damageFlash--;
 
         // Update particles
         this.updateParticles();
@@ -392,8 +414,12 @@ class Game {
 
             // Check collision with player
             if (bulletHitsPlayer(bullet, this.player)) {
+                const before = this.player.health;
                 this.player.takeDamage(bullet.damage);
-                this.spawnParticles(this.player.x, this.player.y, '#ff4444', 5);
+                // Only react to damage that actually landed — takeDamage() is a
+                // no-op during invincibility frames.
+                if (this.player.health < before) this.addImpact(8, 6);
+                this.spawnParticles(this.player.x, this.player.y, PALETTE.danger, 5);
                 bullet.damage = 0; // Mark as consumed
             }
         }
@@ -426,7 +452,7 @@ class Game {
             // Collection
             if (dist < this.player.radius + orb.radius) {
                 if (this.player.gainXP(orb.value)) this.pendingLevelUps++;
-                this.spawnParticles(orb.x, orb.y, '#a855f7', 2);
+                this.spawnParticles(orb.x, orb.y, PALETTE.xp, 2);
                 orb.collected = true;
             }
         }
@@ -463,6 +489,7 @@ class Game {
 
         // Spawn death particles
         this.spawnParticles(enemy.x, enemy.y, enemy.color, 8);
+        this.addImpact(enemy.type === 'boss' ? 7 : 2, 0);
 
         // Drop XP orbs
         const orbCount = Math.max(1, Math.ceil(enemy.xpValue / 5));
@@ -474,7 +501,7 @@ class Game {
                 vy: (Math.random() - 0.5) * 2,
                 value: Math.ceil(enemy.xpValue / orbCount),
                 radius: 4,
-                color: '#a855f7',
+                color: PALETTE.xp,
                 collected: false
             });
         }
@@ -614,135 +641,146 @@ class Game {
         this.state = 'GAME_OVER';
         this.ui.hideLevelUp();
         this.ui.showHUD(false);
-        this.ui.showGameOver(this.player.level, this.roomsCleared, this.enemiesKilled);
+        this.ui.showGameOver(this.player.level, this.roomsCleared, this.enemiesKilled, this.floor);
         this.loopRunning = false;
     }
 
     /** Render the game. */
     render() {
         const ctx = this.ctx;
-        const W = this.canvas.width;
-        const H = this.canvas.height;
+        const CW = this.canvas.width;   // canvas (game-pixel) space
+        const CH = this.canvas.height;
 
-        // Clear
-        ctx.fillStyle = '#0a0a0f';
-        ctx.fillRect(0, 0, W, H);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.imageSmoothingEnabled = false;
 
-        // Apply camera transform
+        // Clear to the void colour
+        ctx.fillStyle = PALETTE.void;
+        ctx.fillRect(0, 0, CW, CH);
+
+        // Screen shake, in world units, quantised to the grid so the whole
+        // image jumps by whole pixels rather than smearing.
+        let sx = 0, sy = 0;
+        if (this.shake > 0) {
+            const mag = this.shake;
+            sx = Math.round((Math.random() - 0.5) * mag * 2);
+            sy = Math.round((Math.random() - 0.5) * mag * 2);
+        }
+
+        // Enter world space: 1 unit = 1 world pixel, drawn onto the small
+        // backing store, so everything is divided by PIXEL_SIZE.
         ctx.save();
-        ctx.translate(-this.camera.x, -this.camera.y);
+        ctx.scale(1 / PIXEL_SIZE, 1 / PIXEL_SIZE);
+        ctx.translate(-Math.round(this.camera.x) + sx, -Math.round(this.camera.y) + sy);
 
-        // Draw map
-        if (this.map) {
-            this.map.draw(ctx, this.camera);
-        }
+        if (this.map) this.map.draw(ctx, this.camera, this.viewWidth, this.viewHeight);
 
-        // Draw XP orbs
+        // XP orbs — squares with a dim halo
         for (const orb of this.xpOrbs) {
-            ctx.beginPath();
-            ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
-            ctx.fillStyle = orb.color;
-            ctx.fill();
-
-            // Glow
-            ctx.beginPath();
-            ctx.arc(orb.x, orb.y, orb.radius + 3, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
-            ctx.fill();
+            pixelRect(ctx, orb.x, orb.y, orb.radius * 3, orb.radius * 3, PALETTE.xpGlow);
+            pixelRect(ctx, orb.x, orb.y, orb.radius * 1.6, orb.radius * 1.6, PALETTE.xp);
         }
 
-        // Draw particles (behind entities)
+        // Particles — chunky embers that shrink as they die
         for (const p of this.particles) {
-            const alpha = p.life / p.maxLife;
-            ctx.globalAlpha = alpha;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
-            ctx.fillStyle = p.color;
-            ctx.fill();
+            ctx.globalAlpha = Math.max(0, Math.min(1, p.life / p.maxLife));
+            pixelRect(ctx, p.x, p.y, p.radius * 2, p.radius * 2, p.color);
         }
         ctx.globalAlpha = 1;
 
-        // Draw enemies
         for (const enemy of this.enemies) {
-            if (!enemy.alive) continue;
-            enemy.draw(ctx);
+            if (enemy.alive) enemy.draw(ctx);
         }
 
-        // Draw player bullets
-        for (const bullet of this.bullets) {
-            ctx.beginPath();
-            ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-            ctx.fillStyle = bullet.color;
-            ctx.fill();
-
-            // Glow effect
-            ctx.beginPath();
-            ctx.arc(bullet.x, bullet.y, bullet.radius + 3, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(79, 195, 247, 0.3)';
-            ctx.fill();
+        // Player bullets
+        for (const b of this.bullets) {
+            pixelRect(ctx, b.x, b.y, b.radius * 2.4, b.radius * 2.4, PALETTE.playerShot);
+            pixelRect(ctx, b.x, b.y, b.radius, b.radius, PALETTE.bone);
         }
 
-        // Draw enemy bullets
-        for (const bullet of this.enemyBullets) {
-            ctx.beginPath();
-            ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
-            ctx.fillStyle = bullet.color;
-            ctx.fill();
-
-            // Glow
-            ctx.beginPath();
-            ctx.arc(bullet.x, bullet.y, bullet.radius + 4, 0, Math.PI * 2);
-            ctx.fillStyle = `${bullet.color}44`;
-            ctx.fill();
+        // Enemy bullets — hotter, with a bright core so they read against floor
+        for (const b of this.enemyBullets) {
+            pixelRect(ctx, b.x, b.y, b.radius * 2.4, b.radius * 2.4, PALETTE.blood);
+            pixelRect(ctx, b.x, b.y, b.radius * 1.5, b.radius * 1.5, PALETTE.enemyShot);
+            pixelRect(ctx, b.x, b.y, b.radius * 0.7, b.radius * 0.7, PALETTE.hud);
         }
 
-        // Draw player
-        if (this.player && this.player.health > 0) {
-            this.player.draw(ctx);
-        }
+        if (this.player && this.player.health > 0) this.player.draw(ctx);
 
-        // Draw exit indicator
-        if (this.map && this.map.exit) {
-            const exit = this.map.exit;
-            const dx = this.player.x - exit.x;
-            const dy = this.player.y - exit.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-
-            if (dist > 100) {
-                // Arrow pointing to exit
-                const angle = Math.atan2(dy, dx);
-                const arrowDist = 50;
-                const ax = this.player.x + Math.cos(angle) * arrowDist;
-                const ay = this.player.y + Math.sin(angle) * arrowDist;
-
-                ctx.save();
-                ctx.translate(ax, ay);
-                ctx.rotate(angle);
-                ctx.beginPath();
-                ctx.moveTo(10, 0);
-                ctx.lineTo(-5, -7);
-                ctx.lineTo(-5, 7);
-                ctx.closePath();
-                ctx.fillStyle = 'rgba(76, 175, 80, 0.6)';
-                ctx.fill();
-                ctx.restore();
+        // Exit chevron when the door is off in the distance
+        if (this.map && this.map.exit && this.player) {
+            const ex = this.map.exit;
+            const dx = ex.x - this.player.x;
+            const dy = ex.y - this.player.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > 140) {
+                const a = Math.atan2(dy, dx);
+                const px = this.player.x + Math.cos(a) * 46;
+                const py = this.player.y + Math.sin(a) * 46;
+                pixelRect(ctx, px, py, 9, 9, PALETTE.exit);
+                pixelRect(ctx, px, py, 4, 4, PALETTE.void);
             }
         }
 
         ctx.restore();
 
-        // Transition fade
-        if (this.transitioning) {
-            ctx.fillStyle = `rgba(10, 10, 15, ${this.transitionAlpha})`;
-            ctx.fillRect(0, 0, W, H);
+        // ---- screen-space passes, in canvas pixels ----
+
+        this.drawVignette(ctx, CW, CH);
+
+        // Damage flash: a red wash that fades over its remaining frames
+        if (this.damageFlash > 0) {
+            ctx.globalAlpha = Math.min(0.5, this.damageFlash / 12);
+            ctx.fillStyle = PALETTE.danger;
+            ctx.fillRect(0, 0, CW, CH);
+            ctx.globalAlpha = 1;
         }
 
-        // Render notifications
+        // Low-health pulse
+        if (this.player && this.player.health > 0 &&
+            this.player.health / this.player.maxHealth < 0.3) {
+            const pulse = 0.12 + 0.08 * Math.sin(this.frameCount * 0.15);
+            ctx.globalAlpha = pulse;
+            ctx.fillStyle = PALETTE.blood;
+            ctx.fillRect(0, 0, CW, CH);
+            ctx.globalAlpha = 1;
+        }
+
+        // Room transition fade
+        if (this.transitioning) {
+            ctx.globalAlpha = Math.max(0, Math.min(1, this.transitionAlpha));
+            ctx.fillStyle = PALETTE.void;
+            ctx.fillRect(0, 0, CW, CH);
+            ctx.globalAlpha = 1;
+        }
+
         this.ui.renderNotification(ctx);
 
-        // Draw minimap
         if (this.map && this.player) {
+            this.ui.enemies = this.enemies;
             this.ui.drawMinimap(this.map, this.camera, this.player);
         }
+    }
+
+    /**
+     * Darken the edges of the frame.
+     *
+     * Cached because building a gradient every frame is wasteful, and rebuilt
+     * only when the canvas dimensions change.
+     */
+    drawVignette(ctx, w, h) {
+        if (!this._vignette || this._vignetteW !== w || this._vignetteH !== h) {
+            const g = ctx.createRadialGradient(
+                w / 2, h / 2, Math.min(w, h) * 0.42,
+                w / 2, h / 2, Math.max(w, h) * 0.72
+            );
+            g.addColorStop(0, 'rgba(0,0,0,0)');
+            g.addColorStop(1, 'rgba(0,0,0,0.45)');
+            this._vignette = g;
+            this._vignetteW = w;
+            this._vignetteH = h;
+        }
+        ctx.fillStyle = this._vignette;
+        ctx.fillRect(0, 0, w, h);
     }
 }

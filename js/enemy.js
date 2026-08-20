@@ -116,27 +116,34 @@ class Enemy {
         }
     }
 
-    draw(ctx) {
-        // Override in subclass
-        ctx.beginPath();
-        ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-        ctx.fillStyle = this.color;
-        ctx.fill();
-        ctx.strokeStyle = '#ff8888';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+    /**
+     * Shared pixel body. Subclasses pass their own colours and silhouette
+     * width so every enemy is built the same way and reads as one family.
+     */
+    drawBody(ctx, dark, lit, size = this.radius * 2) {
+        pixelRect(ctx, this.x, this.y, size + 4, size + 4, PALETTE.void);
+        pixelRect(ctx, this.x, this.y, size, size, dark);
+        pixelRect(ctx, this.x, this.y, size * 0.45, size * 0.45, lit);
+        this.drawHealth(ctx, size);
+    }
 
-        // Health bar
-        if (this.health < this.maxHealth) {
-            const barW = this.radius * 2;
-            const barH = 3;
-            const barX = this.x - barW / 2;
-            const barY = this.y - this.radius - 8;
-            ctx.fillStyle = 'rgba(0,0,0,0.6)';
-            ctx.fillRect(barX - 1, barY - 1, barW + 2, barH + 2);
-            ctx.fillStyle = '#cc2222';
-            ctx.fillRect(barX, barY, barW * (this.health / this.maxHealth), barH);
+    /** Health as discrete pips above the body — no smooth bars at this scale. */
+    drawHealth(ctx, size) {
+        if (this.health >= this.maxHealth) return;
+        const pips = 5;
+        const filled = Math.ceil((this.health / this.maxHealth) * pips);
+        const pipW = 4, gap = 2;
+        const totalW = pips * pipW + (pips - 1) * gap;
+        const x0 = this.x - totalW / 2;
+        const y = this.y - size / 2 - 10;
+        for (let i = 0; i < pips; i++) {
+            ctx.fillStyle = i < filled ? PALETTE.danger : PALETTE.blood;
+            ctx.fillRect(snap(x0 + i * (pipW + gap)), snap(y), pipW, 3);
         }
+    }
+
+    draw(ctx) {
+        this.drawBody(ctx, this.color, PALETTE.bone);
     }
 }
 
@@ -152,6 +159,10 @@ class BasicEnemy extends Enemy {
         this.color = '#ff4444';
         this.xpValue = 10;
         this.shootCooldown = 90;
+    }
+
+    draw(ctx) {
+        this.drawBody(ctx, PALETTE.chaser, PALETTE.chaserLit);
     }
 
     update(player, enemies, map) {
@@ -186,6 +197,11 @@ class ShooterEnemy extends Enemy {
         this.color = '#aa44ff';
         this.xpValue = 15;
         this.shootCooldown = 60;
+    }
+
+    draw(ctx) {
+        // Narrower silhouette so the sniper reads as distinct at a glance
+        this.drawBody(ctx, PALETTE.shooter, PALETTE.shooterLit, this.radius * 1.7);
     }
 
     update(player, enemies, map) {
@@ -223,6 +239,17 @@ class SpiralEnemy extends Enemy {
         this.xpValue = 20;
         this.shootCooldown = 45;
         this.spiralAngle = 0;
+    }
+
+    draw(ctx) {
+        this.drawBody(ctx, PALETTE.spiral, PALETTE.spiralLit);
+        // Four orbiting pips telegraph the ring attack
+        for (let i = 0; i < 4; i++) {
+            const a = this.spiralAngle + (Math.PI / 2) * i;
+            pixelRect(ctx, this.x + Math.cos(a) * (this.radius + 8),
+                           this.y + Math.sin(a) * (this.radius + 8),
+                           4, 4, PALETTE.spiralLit);
+        }
     }
 
     update(player, enemies, map) {
@@ -321,58 +348,37 @@ class BossEnemy extends Enemy {
     }
 
     draw(ctx) {
-        // Hexagon shape for boss
-        ctx.save();
-        ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle);
+        const r = this.radius;
 
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-            const a = (Math.PI * 2 / 6) * i;
-            const px = Math.cos(a) * this.radius;
-            const py = Math.sin(a) * this.radius;
-            if (i === 0) ctx.moveTo(px, py);
-            else ctx.lineTo(px, py);
+        // Slab body with a pulsing core keyed to the current phase
+        pixelRect(ctx, this.x, this.y, r * 2 + 8, r * 2 + 8, PALETTE.void);
+        pixelRect(ctx, this.x, this.y, r * 2, r * 2, PALETTE.boss);
+        pixelRect(ctx, this.x, this.y, r, r, PALETTE.bossLit);
+
+        const pulse = 6 + Math.sin(this.driftAngle * 6) * 3;
+        pixelRect(ctx, this.x, this.y, pulse, pulse, PALETTE.hud);
+
+        // Corner studs
+        for (const [sx, sy] of [[-1,-1],[1,-1],[-1,1],[1,1]]) {
+            pixelRect(ctx, this.x + sx * r, this.y + sy * r, 8, 8, PALETTE.bossLit);
         }
-        ctx.closePath();
-        ctx.fillStyle = this.color;
-        ctx.fill();
-        ctx.strokeStyle = '#ff4444';
-        ctx.lineWidth = 3;
-        ctx.stroke();
 
-        // Inner circle
-        ctx.beginPath();
-        ctx.arc(0, 0, this.radius * 0.4, 0, Math.PI * 2);
-        ctx.fillStyle = '#ff6666';
-        ctx.fill();
+        // Phase pips
+        for (let i = 0; i < 3; i++) {
+            pixelRect(ctx, this.x - 14 + i * 14, this.y - r - 20, 8, 8,
+                      i <= this.phase ? PALETTE.hud : PALETTE.blood);
+        }
 
-        ctx.restore();
-
-        // Phase indicator
-        ctx.fillStyle = '#ff4444';
-        ctx.font = 'bold 12px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(`PHASE ${this.phase + 1}`, this.x, this.y - this.radius - 15);
-
-        // Health bar (wider for boss)
-        const barW = this.radius * 3;
-        const barH = 6;
-        const barX = this.x - barW / 2;
-        const barY = this.y - this.radius - 5;
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-        ctx.fillStyle = '#cc2222';
-        ctx.fillRect(barX, barY, barW * (this.health / this.maxHealth), barH);
-        ctx.strokeStyle = '#ff4444';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(barX, barY, barW, barH);
-
-        // Name
-        ctx.fillStyle = '#ff8888';
-        ctx.font = 'bold 14px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText('BOSS', this.x, barY - 8);
+        // Wide health bar, drawn as discrete blocks
+        const blocks = 12;
+        const filled = Math.ceil((this.health / this.maxHealth) * blocks);
+        const bw = 7, gap = 2;
+        const total = blocks * bw + (blocks - 1) * gap;
+        const x0 = this.x - total / 2, y = this.y - r - 10;
+        for (let i = 0; i < blocks; i++) {
+            ctx.fillStyle = i < filled ? PALETTE.danger : PALETTE.blood;
+            ctx.fillRect(snap(x0 + i * (bw + gap)), snap(y), bw, 4);
+        }
     }
 }
 

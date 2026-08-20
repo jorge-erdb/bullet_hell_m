@@ -21,7 +21,8 @@ regenerate a fresh dungeon and keep your build. Die and the run ends.
 | **Roguelite upgrades** | 10 upgrades drafted 3-at-a-time on level-up — health, damage, speed, multi-shot, pierce, fire rate, bullet speed, pickup magnet |
 | **Enemy variety** | Chasers, shooters that lead their target, and spiral emitters, each with its own movement and firing pattern |
 | **Difficulty ramp** | Enemy movement, fire rate and bullet speed ease in over the first 10 floors rather than starting at full strength |
-| **Feel** | Particle bursts on hit and death, invincibility frames after damage, magnet-pull on XP orbs, room-transition fades, live minimap |
+| **Feel** | Screen shake and damage flash on hit, low-health pulse, invincibility blink, particle bursts, magnet-pull on XP orbs, live minimap with threats |
+| **Presentation** | Loose modern retro on a chunky pixel grid, DOOM-register palette — rust and dried blood, hot amber for anything urgent |
 
 ## Controls
 
@@ -59,6 +60,7 @@ js/
   bullet.js         Shared collision helpers and off-map cleanup
   enemy.js          Enemy base class + Basic / Shooter / Spiral / Boss subclasses
   map.js            Procedural generation, room typing, spawn tables, world + minimap drawing
+  palette.js        Colour identity and the pixel-grid constants + draw helpers
   ui.js             DOM HUD updates, minimap, overlay show/hide, canvas notifications
   game.js           The engine: state machine, game loop, collisions, camera, orchestration
   main.js           Bootstrap — builds the objects and wires up the buttons
@@ -84,6 +86,30 @@ That distinction matters: a `loopRunning` flag guards `startLoop()` against
 scheduling a second chain. Two concurrent chains would advance timers at double
 speed and draw twice per frame — the cause of a long-lived flickering bug during
 development (see [BUGS.md](BUGS.md)).
+
+### The pixel grid
+
+The canvas backing store is the window divided by `PIXEL_SIZE`, stretched back
+to full size by CSS with `image-rendering: pixelated` and
+`imageSmoothingEnabled = false`. Everything therefore lands on a visible grid,
+and the upscale is what produces the chunky look — there is no sprite work.
+
+World drawing happens inside `ctx.scale(1 / PIXEL_SIZE, …)`, so entity code
+keeps using world units. The consequence to remember: **canvas dimensions are
+not world dimensions**. Camera maths and view culling use `viewWidth` /
+`viewHeight`, which multiply back up.
+
+This also settles the HiDPI question. Integer upscaling is exactly what a pixel
+look wants, where a devicePixelRatio-smoothed canvas would fight it.
+
+Entities are drawn as pixel-snapped rectangles rather than circles — at this
+resolution a small circle turns to mush. `pixelRect()` and `pixelFrame()` in
+`palette.js` are the two primitives everything is built from.
+
+Floors are filled by `Map.fillFloor()`, whose checkerboard phase comes from
+*global* tile coordinates rather than each rectangle's own origin. That is what
+lets rooms and corridors be filled independently and still seam invisibly —
+necessary because corridors run centre-to-centre and so cross room interiors.
 
 ### Simulation timing
 

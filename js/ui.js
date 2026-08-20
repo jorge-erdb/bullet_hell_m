@@ -40,66 +40,45 @@ class UI {
     /** Draw minimap. */
     drawMinimap(map, camera, player, width = 150, height = 150) {
         const ctx = this.minimapCtx;
+        ctx.imageSmoothingEnabled = false;
         ctx.clearRect(0, 0, width, height);
 
-        // Background
-        ctx.fillStyle = 'rgba(10, 10, 20, 0.9)';
+        ctx.fillStyle = '#0a0709';
         ctx.fillRect(0, 0, width, height);
 
-        // Calculate scale
-        const scaleX = width / map.width;
-        const scaleY = height / map.height;
-        const scale = Math.min(scaleX, scaleY);
+        const scale = Math.min(width / map.width, height / map.height);
 
-        // Draw rooms
+        // Corridors under the rooms
+        ctx.fillStyle = '#2a211d';
+        for (const r of map.corridorRects || []) {
+            ctx.fillRect(Math.floor(r.x * scale), Math.floor(r.y * scale),
+                         Math.max(1, Math.floor(r.w * scale)),
+                         Math.max(1, Math.floor(r.h * scale)));
+        }
+
         for (const room of map.rooms) {
-            const rx = room.x * scale;
-            const ry = room.y * scale;
-            const rw = room.w * scale;
-            const rh = room.h * scale;
-
-            if (room.cleared) {
-                ctx.fillStyle = 'rgba(100, 100, 100, 0.3)';
-            } else {
-                ctx.fillStyle = 'rgba(200, 200, 200, 0.15)';
-            }
-            ctx.fillRect(rx, ry, rw, rh);
-
-            ctx.strokeStyle = room.cleared ? '#555' : '#888';
-            ctx.lineWidth = 0.5;
-            ctx.strokeRect(rx, ry, rw, rh);
+            ctx.fillStyle = room.cleared ? '#3a2e28' : '#5c4638';
+            ctx.fillRect(Math.floor(room.x * scale), Math.floor(room.y * scale),
+                         Math.max(1, Math.floor(room.w * scale)),
+                         Math.max(1, Math.floor(room.h * scale)));
         }
 
-        // Draw corridors
-        ctx.strokeStyle = 'rgba(100, 100, 100, 0.3)';
-        ctx.lineWidth = 1;
-        for (const corr of map.corridors) {
-            ctx.beginPath();
-            ctx.moveTo(corr.x1 * scale, corr.y1 * scale);
-            ctx.lineTo(corr.x2 * scale, corr.y2 * scale);
-            ctx.stroke();
-        }
-
-        // Draw exit
         if (map.exit) {
-            ctx.fillStyle = '#4caf50';
-            ctx.fillRect(
-                map.exit.x * scale - 3,
-                map.exit.y * scale - 3,
-                6, 6
-            );
+            ctx.fillStyle = PALETTE.exit;
+            ctx.fillRect(Math.floor(map.exit.x * scale) - 2, Math.floor(map.exit.y * scale) - 2, 5, 5);
         }
 
-        // Draw player
-        const px = player.x * scale;
-        const py = player.y * scale;
-        ctx.fillStyle = '#2196f3';
-        ctx.beginPath();
-        ctx.arc(px, py, 3, 0, Math.PI * 2);
-        ctx.fill();
+        // Enemies — previously a TODO, so the minimap never showed threats
+        if (this.enemies) {
+            ctx.fillStyle = PALETTE.danger;
+            for (const e of this.enemies) {
+                if (!e.alive) continue;
+                ctx.fillRect(Math.floor(e.x * scale) - 1, Math.floor(e.y * scale) - 1, 2, 2);
+            }
+        }
 
-        // Draw enemy dots (red) if visible on screen
-        // (This would need enemies passed in — simplified here)
+        ctx.fillStyle = PALETTE.hud;
+        ctx.fillRect(Math.floor(player.x * scale) - 2, Math.floor(player.y * scale) - 2, 4, 4);
     }
 
     /** Show level-up screen with upgrade cards. */
@@ -138,7 +117,8 @@ class UI {
     }
 
     /** Show game over screen with stats. */
-    showGameOver(level, rooms, enemies) {
+    showGameOver(level, rooms, enemies, floor = 1) {
+        document.getElementById('go-floor').textContent = floor;
         document.getElementById('go-level').textContent = level;
         document.getElementById('go-rooms').textContent = rooms;
         document.getElementById('go-enemies').textContent = enemies;
@@ -203,18 +183,19 @@ class UI {
 
         const { text, duration, maxDuration } = this._notification;
         const alpha = Math.min(1, duration / 30);
-        const scale = duration > maxDuration - 30 ? (maxDuration - duration) / 30 : 1;
 
         ctx.save();
         ctx.globalAlpha = alpha;
-        ctx.translate(ctx.canvas.width / 2, ctx.canvas.height / 2 - 60);
-        ctx.scale(scale, scale);
-
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 24px sans-serif';
+        // Canvas space is PIXEL_SIZE times smaller than the screen, so an 8px
+        // font here renders at 24px to the player.
+        ctx.font = '8px "Press Start 2P", monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(text, 0, 0);
-
+        const cx = Math.floor(ctx.canvas.width / 2);
+        const cy = Math.floor(ctx.canvas.height / 3);
+        ctx.fillStyle = PALETTE.void;
+        ctx.fillText(text, cx + 1, cy + 1);
+        ctx.fillStyle = PALETTE.hud;
+        ctx.fillText(text, cx, cy);
         ctx.restore();
 
         this._notification.duration--;

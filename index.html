@@ -16,6 +16,9 @@
     <!-- Inline SVG favicon: the player dot on the game's background -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0f'/%3E%3Ccircle cx='16' cy='16' r='9' fill='%232196f3' stroke='%2364b5f6' stroke-width='2'/%3E%3C/svg%3E">
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -74,6 +77,7 @@
     <div id="gameover-screen" class="screen hidden">
         <h2 class="gameover-title">GAME OVER</h2>
         <div class="gameover-stats">
+            <p>Floor Reached: <span id="go-floor">1</span></p>
             <p>Level Reached: <span id="go-level">1</span></p>
             <p>Rooms Cleared: <span id="go-rooms">0</span></p>
             <p>Enemies Defeated: <span id="go-enemies">0</span></p>
@@ -87,6 +91,7 @@
         <button id="resume-btn" class="btn">Resume</button>
     </div>
 
+    <script src="js/palette.js"></script>
     <script src="js/player.js"></script>
     <script src="js/bullet.js"></script>
     <script src="js/enemy.js"></script>

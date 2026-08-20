@@ -466,98 +466,87 @@ class Map {
         }
     }
 
-    /** Draw the map tiles. */
-    draw(ctx, camera) {
-        // Calculate visible tile range
-        const startTileX = Math.floor(camera.x / this.tileSize) - 1;
-        const startTileY = Math.floor(camera.y / this.tileSize) - 1;
-        const endTileX = startTileX + Math.ceil(ctx.canvas.width / this.tileSize) + 2;
-        const endTileY = startTileY + Math.ceil(ctx.canvas.height / this.tileSize) + 2;
+    /**
+     * Fill a floor rectangle: base colour plus a checkerboard of lighter tiles.
+     *
+     * The checkerboard phase comes from GLOBAL tile coordinates, not from the
+     * rectangle's own origin. That is what lets rooms and corridors be filled
+     * independently and still seam together invisibly — which matters because
+     * corridors run centre-to-centre and therefore cross room interiors. Give
+     * them their own colour and every room gets a stripe painted across it.
+     */
+    fillFloor(ctx, x, y, w, h, clip) {
+        const ts = this.tileSize;
+        const x0 = Math.max(x, clip.left), y0 = Math.max(y, clip.top);
+        const x1 = Math.min(x + w, clip.right), y1 = Math.min(y + h, clip.bottom);
+        if (x1 <= x0 || y1 <= y0) return;
 
-        // Draw floor tiles for each room
+        ctx.fillStyle = PALETTE.floorDark;
+        ctx.fillRect(snap(x0), snap(y0), snap(x1 - x0), snap(y1 - y0));
+
+        ctx.fillStyle = PALETTE.floorLight;
+        const tx0 = Math.floor(x0 / ts), ty0 = Math.floor(y0 / ts);
+        const tx1 = Math.ceil(x1 / ts), ty1 = Math.ceil(y1 / ts);
+        for (let ty = ty0; ty < ty1; ty++) {
+            for (let tx = tx0; tx < tx1; tx++) {
+                if ((tx + ty) % 2 !== 0) continue;
+                const px = Math.max(tx * ts, x0), py = Math.max(ty * ts, y0);
+                const pw = Math.min((tx + 1) * ts, x1) - px;
+                const ph = Math.min((ty + 1) * ts, y1) - py;
+                if (pw > 0 && ph > 0) ctx.fillRect(snap(px), snap(py), snap(pw), snap(ph));
+            }
+        }
+    }
+
+    /**
+     * Draw the level.
+     *
+     * View size arrives in world units rather than being read off the canvas:
+     * the backing store is PIXEL_SIZE times smaller than the window, so canvas
+     * dimensions are not world dimensions.
+     */
+    draw(ctx, camera, viewW, viewH) {
+        const ts = this.tileSize;
+        const clip = {
+            left: camera.x - ts, right: camera.x + viewW + ts,
+            top: camera.y - ts, bottom: camera.y + viewH + ts
+        };
+        const visible = (x, y, w, h) =>
+            !(x > clip.right || x + w < clip.left || y > clip.bottom || y + h < clip.top);
+
+        // Walls first, as slabs. Floors are painted over them afterwards, so
+        // corridor mouths open doorways without any special-casing.
         for (const room of this.rooms) {
-            const roomStartX = Math.max(startTileX, Math.floor(room.x / this.tileSize));
-            const roomStartY = Math.max(startTileY, Math.floor(room.y / this.tileSize));
-            const roomEndX = Math.min(endTileX, Math.floor((room.x + room.w) / this.tileSize));
-            const roomEndY = Math.min(endTileY, Math.floor((room.y + room.h) / this.tileSize));
-
-            for (let ty = roomStartY; ty < roomEndY; ty++) {
-                for (let tx = roomStartX; tx < roomEndX; tx++) {
-                    const px = tx * this.tileSize;
-                    const py = ty * this.tileSize;
-
-                    // Floor
-                    ctx.fillStyle = '#2a2a2a';
-                    ctx.fillRect(px, py, this.tileSize, this.tileSize);
-
-                    // Subtle grid lines
-                    ctx.strokeStyle = '#333333';
-                    ctx.lineWidth = 0.5;
-                    ctx.strokeRect(px, py, this.tileSize, this.tileSize);
-                }
-            }
-
-            // Room walls
-            ctx.strokeStyle = '#444444';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(room.x, room.y, room.w, room.h);
-
-            // Corner pillars
-            const pillarSize = 8;
-            ctx.fillStyle = '#555555';
-            // Top-left
-            ctx.fillRect(room.x - 2, room.y - 2, pillarSize, pillarSize);
-            // Top-right
-            ctx.fillRect(room.x + room.w - pillarSize + 2, room.y - 2, pillarSize, pillarSize);
-            // Bottom-left
-            ctx.fillRect(room.x - 2, room.y + room.h - pillarSize + 2, pillarSize, pillarSize);
-            // Bottom-right
-            ctx.fillRect(room.x + room.w - pillarSize + 2, room.y + room.h - pillarSize + 2, pillarSize, pillarSize);
+            if (!visible(room.x - 8, room.y - 8, room.w + 16, room.h + 16)) continue;
+            pixelFrame(ctx, room.x - 8, room.y - 8, room.w + 16, room.h + 16, 8, PALETTE.wall);
+            pixelFrame(ctx, room.x - 2, room.y - 2, room.w + 4, room.h + 4, 2, PALETTE.wallLit);
         }
 
-        // Draw corridors
-        for (const corr of this.corridors) {
-            // L-shaped corridor: draw horizontal then vertical
-            const segments = this.corridorSegments(corr);
-            for (const seg of segments) {
-                ctx.fillStyle = '#2a2a2a';
-                ctx.fillRect(seg.x1, seg.y1, seg.x2 - seg.x1, seg.y2 - seg.y1);
-            }
+        for (const room of this.rooms) {
+            if (!visible(room.x, room.y, room.w, room.h)) continue;
+            this.fillFloor(ctx, room.x, room.y, room.w, room.h, clip);
+            ctx.fillStyle = PALETTE.floorGrime;
+            ctx.fillRect(snap(room.x), snap(room.y), snap(room.w), 3);
+            ctx.fillRect(snap(room.x), snap(room.y + room.h - 3), snap(room.w), 3);
         }
 
-        // Draw exit door
+        for (const r of this.corridorRects) {
+            if (!visible(r.x, r.y, r.w, r.h)) continue;
+            this.fillFloor(ctx, r.x, r.y, r.w, r.h, clip);
+        }
+
+        // Exit door
         if (this.exit) {
-            const ex = this.exit.x;
-            const ey = this.exit.y;
-            const doorW = 40;
-            const doorH = 20;
-
-            ctx.fillStyle = '#2d5a2d';
-            ctx.fillRect(ex - doorW / 2, ey - doorH / 2, doorW, doorH);
-            ctx.strokeStyle = '#4caf50';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(ex - doorW / 2, ey - doorH / 2, doorW, doorH);
-
-            // Exit label
-            ctx.fillStyle = '#4caf50';
-            ctx.font = 'bold 10px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('EXIT', ex, ey + 4);
+            const e = this.exit;
+            pixelRect(ctx, e.x, e.y, 54, 30, PALETTE.exit);
+            pixelRect(ctx, e.x, e.y, 44, 20, '#0d2a12');
+            pixelRect(ctx, e.x, e.y, 10, 14, PALETTE.exit);
         }
 
-        // Draw start marker
+        // Start pad
         const startRoom = this.rooms[0];
         if (startRoom) {
-            const sx = startRoom.cx;
-            const sy = startRoom.cy;
-            ctx.fillStyle = 'rgba(33, 150, 243, 0.3)';
-            ctx.beginPath();
-            ctx.arc(sx, sy, 20, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#64b5f6';
-            ctx.font = 'bold 10px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText('START', sx, sy - 25);
+            pixelFrame(ctx, startRoom.cx - 18, startRoom.cy - 18, 36, 36, 2, PALETTE.hudDim);
         }
     }
 

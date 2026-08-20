@@ -33,14 +33,6 @@ debugging path is part of the record, not noise.
   that isn't the exit), or delete the class.
 - **Severity:** 🟢 Dead code / missing feature.
 
-### C. Canvas is not DPI-scaled
-- **File:** `js/main.js`
-- **Symptom:** Rendering is soft on HiDPI/retina displays.
-- **Cause:** The canvas backing store is sized to CSS pixels
-  (`canvas.width = window.innerWidth`) with no `devicePixelRatio` multiplier.
-- **Fix:** size the backing store to `innerWidth * dpr` and scale the context.
-- **Severity:** 🟢 Polish.
-
 ---
 
 ## Fixed

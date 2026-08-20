@@ -8,9 +8,23 @@
     const canvas = document.getElementById('game');
     const minimapCanvas = document.getElementById('minimap');
 
-    // Set canvas size
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    /**
+     * Size the backing store to the window divided by PIXEL_SIZE, then let CSS
+     * stretch it back to full size with smoothing off. Everything therefore
+     * lands on a visible pixel grid, and the upscale is what gives the chunky
+     * look rather than any per-sprite trickery.
+     */
+    function resizeCanvas() {
+        canvas.width = Math.ceil(window.innerWidth / PIXEL_SIZE);
+        canvas.height = Math.ceil(window.innerHeight / PIXEL_SIZE);
+        canvas.style.width = window.innerWidth + 'px';
+        canvas.style.height = window.innerHeight + 'px';
+        // Resizing the backing store resets context state, so re-disable
+        // smoothing every time.
+        canvas.getContext('2d').imageSmoothingEnabled = false;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
 
     // Initialize systems
     const ui = new UI(canvas, minimapCanvas);
