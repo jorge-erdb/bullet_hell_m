@@ -38,6 +38,9 @@ class Game {
         this.enemiesKilled = 0;
         this.roomsCleared = 0;
 
+        // Current floor, 1-based. Drives the early-game difficulty ramp.
+        this.floor = 1;
+
         // Room transition
         this.transitionAlpha = 0;
         this.transitioning = false;
@@ -120,6 +123,7 @@ class Game {
     start() {
         this.enemiesKilled = 0;
         this.roomsCleared = 0;
+        this.floor = 1;
 
         // Create player at map center
         this.player = new Player(0, 0);
@@ -139,6 +143,17 @@ class Game {
         this.pendingLevelUps = 0;
     }
 
+    /**
+     * Ease freshly spawned enemies to the current floor's difficulty.
+     * Applied at the two places enemies enter the world so no spawn path
+     * can bypass the ramp.
+     */
+    scaleToFloor(enemies) {
+        const t = difficultyForFloor(this.floor);
+        for (const enemy of enemies) enemy.applyDifficulty(t);
+        return enemies;
+    }
+
     /** Generate a new map and populate it. */
     generateMap() {
         this.map = new Map(7000, 7000);
@@ -152,7 +167,7 @@ class Game {
         this.enemies = [];
         this.currentRoom = null; // Reset room tracking for new map
         const startRoom = this.map.rooms[0];
-        const enemies = this.map.getEnemiesForRoom(startRoom);
+        const enemies = this.scaleToFloor(this.map.getEnemiesForRoom(startRoom));
         this.enemies.push(...enemies);
 
         // Clear other entities
@@ -165,7 +180,7 @@ class Game {
     /** Spawn enemies for a new room. */
     spawnRoomEnemies(room) {
         // Keep spawns clear of the doorway the player just walked through.
-        const enemies = this.map.getEnemiesForRoom(room, this.player);
+        const enemies = this.scaleToFloor(this.map.getEnemiesForRoom(room, this.player));
         this.enemies.push(...enemies);
 
         // Treasure room bonus
@@ -262,7 +277,7 @@ class Game {
         }
 
         // Update HUD
-        this.ui.updateHUD(this.player);
+        this.ui.updateHUD(this.player, this.floor);
     }
 
     /** Update player bullets (movement + collision). */
@@ -305,6 +320,16 @@ class Game {
         for (const bullet of this.enemyBullets) {
             bullet.x += bullet.vx;
             bullet.y += bullet.vy;
+
+            // Pop against room and corridor walls, so enemies can't shoot the
+            // player through geometry they can't themselves cross. Checked
+            // before the player test: a bullet that just entered a wall should
+            // burst rather than land a hit.
+            if (!this.map.isWalkable(bullet.x, bullet.y)) {
+                this.spawnParticles(bullet.x, bullet.y, bullet.color, 3);
+                bullet.damage = 0; // Mark as consumed
+                continue;
+            }
 
             // Check collision with player
             if (bulletHitsPlayer(bullet, this.player)) {
@@ -452,7 +477,9 @@ class Game {
                         this.transitionAlpha += 0.05;
                         if (this.transitionAlpha >= 1) {
                             clearInterval(fadeInterval);
+                            this.floor++;
                             this.generateMap();
+                            this.ui.drawNotification(this.ctx, `FLOOR ${this.floor}`);
                             this.transitionAlpha = 1;
 
                             const fadeBack = setInterval(() => {

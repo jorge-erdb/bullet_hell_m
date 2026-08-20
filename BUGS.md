@@ -162,42 +162,68 @@ debugging path is part of the record, not noise.
 - **Verified:** overlapping maps went 112/200 → **0/200** after the fix.
 - **Status:** ✅ Fixed.
 
-### 8. `gameOver()` left the level-up screen visible 🟡
+### 8. Every enemy fired on its first frame 🟡
+- **File:** `js/enemy.js` — `Enemy` constructor / `applyDifficulty()`
+- **Symptom:** Walking into a room drew an instant volley from every enemy in
+  it, with no time to read the layout.
+- **Cause:** `shootTimer` was initialised to `0`, so the first `shootTimer--`
+  in `update()` put it below the fire threshold immediately — and identically
+  for every enemy, so their shots were synchronised rather than staggered.
+- **Fix:** `applyDifficulty()` seeds `shootTimer` to a randomised fraction
+  (0.6–1.2×) of the cooldown.
+- **Status:** ✅ Fixed.
+
+### 9. Enemy bullets passed through walls 🟢
+- **File:** `js/game.js` — `updateEnemyBullets()`
+- **Symptom:** Enemy fire crossed room and corridor walls, hitting the player
+  through geometry neither could walk through.
+- **Cause:** Enemy bullets were only tested against the player and the map
+  bounds, never against walkable geometry.
+- **Fix:** bullets are tested against `map.isWalkable()` after moving and burst
+  into particles when they leave the floor. Checked *before* the player test,
+  so a bullet entering a wall bursts rather than landing a hit. Player bullets
+  are deliberately exempt — the asymmetry favours the player.
+- **Verified:** a bullet fired at a wall 200 px away survived 33 frames of open
+  floor, then popped 2 px short of the wall with no overshoot and no damage
+  dealt; a bullet on open floor is not removed spuriously.
+- **Status:** ✅ Fixed.
+
+### 10. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 9. Game loop never stopped after game over 🟡
+### 11. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 10. Player could act during room transitions 🟡
+### 12. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 11. Confirm button worked with no upgrade selected 🟢
+### 13. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 12. Only one upgrade shown for a multi-level XP gain 🟢
+### 14. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 13. Redundant `Game.level` 🟢
+### 15. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 14. Over-generous bullet cleanup margin 🟢
+### 16. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 15. Confusing "Full Heal" upgrade 🟢
+### 17. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 16. Debug scaffolding shipped in the build 🟢
+### 18. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -213,5 +239,5 @@ debugging path is part of the record, not noise.
 | Severity | Open | Fixed |
 |---|---|---|
 | 🔴 Critical | 0 | 5 |
-| 🟡 Moderate | 0 | 5 |
-| 🟢 Minor | 3 | 6 |
+| 🟡 Moderate | 0 | 6 |
+| 🟢 Minor | 3 | 7 |

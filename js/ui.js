@@ -21,7 +21,7 @@ class UI {
     }
 
     /** Update HUD bars from player data. */
-    updateHUD(player) {
+    updateHUD(player, floor = 1) {
         // HP bar
         const hpPercent = (player.health / player.maxHealth) * 100;
         this.hpBar.style.width = `${hpPercent}%`;
@@ -34,7 +34,7 @@ class UI {
         this.xpText.textContent = `Lv ${player.level} — ${player.xp} / ${xpNeeded}`;
 
         // Stats
-        this.statsDisplay.textContent = player.getStatsString();
+        this.statsDisplay.textContent = `${player.getStatsString()} | FLOOR: ${floor}`;
     }
 
     /** Draw minimap. */

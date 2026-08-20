@@ -2,6 +2,32 @@
  * Enemy classes — base class and 3 enemy types + boss.
  */
 
+/**
+ * Difficulty ramp.
+ *
+ * Enemy stats are authored at full strength and scaled DOWN early, so floor 10
+ * and beyond plays exactly as the tuned values read in each constructor. Only
+ * the first floors are eased.
+ */
+const DIFFICULTY_RAMP_FLOORS = 10;
+
+/** Multipliers applied on floor 1, interpolated to 1.0 by DIFFICULTY_RAMP_FLOORS. */
+const EARLY_GAME = {
+    speed: 0.55,        // slower movement
+    shootCooldown: 1.9, // longer gap between shots (higher = slower fire)
+    bulletSpeed: 0.60   // slower, more readable bullets
+};
+
+/**
+ * Ramp position for a floor: 0 on floor 1, 1 on floor 10 and after.
+ * @param {number} floor - 1-based
+ */
+function difficultyForFloor(floor) {
+    const t = (floor - 1) / (DIFFICULTY_RAMP_FLOORS - 1);
+    return Math.max(0, Math.min(1, t));
+}
+
+
 // ===== Base Enemy Class =====
 class Enemy {
     constructor(x, y, type) {
@@ -17,6 +43,7 @@ class Enemy {
         this.xpValue = 10;
         this.shootCooldown = 90;
         this.shootTimer = 0;
+        this.bulletSpeedScale = 1;
         this.alive = true;
         this.deathTimer = 0;
         this.angle = 0; // for rotation animations
@@ -45,16 +72,40 @@ class Enemy {
     }
 
     shootTowardPlayer(angle, speed = 3) {
+        const v = speed * this.bulletSpeedScale;
         return {
             x: this.x,
             y: this.y,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
+            vx: Math.cos(angle) * v,
+            vy: Math.sin(angle) * v,
             damage: this.damage,
             radius: 6,
             color: this.color,
-            speed: speed
+            speed: v
         };
+    }
+
+    /**
+     * Ease this enemy's stats for an early floor.
+     *
+     * Called once, right after construction, so it scales whatever the subclass
+     * set rather than the base defaults. At t = 1 every multiplier is 1.0 and
+     * the enemy is left exactly as authored.
+     *
+     * @param {number} t - ramp position from difficultyForFloor()
+     */
+    applyDifficulty(t) {
+        const ease = (early) => early + (1 - early) * t;
+
+        this.speed *= ease(EARLY_GAME.speed);
+        this.bulletSpeedScale = ease(EARLY_GAME.bulletSpeed);
+        this.shootCooldown = Math.round(this.shootCooldown * ease(EARLY_GAME.shootCooldown));
+
+        // shootTimer starts at 0, which makes every enemy fire on its first
+        // frame — the whole room volleys the instant the player walks in.
+        // Start it partway through a randomised cooldown instead, so shots are
+        // staggered and the player gets a moment to read the room.
+        this.shootTimer = Math.round(this.shootCooldown * (0.6 + Math.random() * 0.6));
     }
 
     takeDamage(amount) {

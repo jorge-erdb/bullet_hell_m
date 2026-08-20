@@ -20,6 +20,7 @@ regenerate a fresh dungeon and keep your build. Die and the run ends.
 | **Procedural maps** | 6–9 rooms grown outward from a start room, spacing-checked, then typed (combat, hard combat, treasure, empty, exit) and connected by corridors you walk down |
 | **Roguelite upgrades** | 10 upgrades drafted 3-at-a-time on level-up — health, damage, speed, multi-shot, pierce, fire rate, bullet speed, pickup magnet |
 | **Enemy variety** | Chasers, shooters that lead their target, and spiral emitters, each with its own movement and firing pattern |
+| **Difficulty ramp** | Enemy movement, fire rate and bullet speed ease in over the first 10 floors rather than starting at full strength |
 | **Feel** | Particle bursts on hit and death, invincibility frames after damage, magnet-pull on XP orbs, room-transition fades, live minimap |
 
 ## Controls
@@ -107,6 +108,27 @@ a 180–250 px standoff and `SpiralEnemy` closes to 140 px, so a room has to
 comfortably exceed twice the standoff. Rooms are 640–1024 px for that reason;
 at the original 128–256 px those enemies were pushed through the walls the
 moment the player walked in.
+
+### Difficulty ramp
+
+Enemy stats are authored at full strength in each constructor and scaled *down*
+on early floors, so floor 10 and beyond plays exactly as those values read —
+only the opening is eased. `difficultyForFloor()` returns 0 on floor 1 and 1
+from floor 10, and `Enemy.applyDifficulty()` interpolates movement speed, fire
+rate and bullet speed between `EARLY_GAME` and unmodified.
+
+It is applied once per enemy immediately after construction, at the two points
+where enemies enter the world, so no spawn path can bypass it.
+
+`shootTimer` also starts partway through a randomised cooldown rather than at
+zero. Left at zero every enemy fires on its first update, so an entire room
+volleys the instant the player walks in.
+
+### Bullets and walls
+
+Enemy bullets pop on room and corridor walls, which stops enemies shooting the
+player through geometry neither of them can cross. Player bullets deliberately
+do not — the asymmetry is in the player's favour.
 
 ### Level-ups
 
