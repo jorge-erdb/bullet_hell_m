@@ -22,8 +22,26 @@ class Enemy {
         this.angle = 0; // for rotation animations
     }
 
-    update(player, enemies) {
+    update(player, enemies, map) {
         // Override in subclass
+    }
+
+    /**
+     * Move by a delta, respecting walls when a map is supplied.
+     *
+     * Resolved per axis so an enemy pressed against a wall slides along it.
+     * This is what keeps enemies inside the room they were spawned in — they
+     * have no pathfinding, so without it a chaser would walk through walls and
+     * a kiting shooter would back straight out of the level.
+     */
+    moveBy(dx, dy, map) {
+        if (!map) {
+            this.x += dx;
+            this.y += dy;
+            return;
+        }
+        if (map.canOccupy(this.x + dx, this.y, this.radius)) this.x += dx;
+        if (map.canOccupy(this.x, this.y + dy, this.radius)) this.y += dy;
     }
 
     shootTowardPlayer(angle, speed = 3) {
@@ -77,7 +95,7 @@ class BasicEnemy extends Enemy {
         super(x, y, 'basic');
         this.health = 30;
         this.maxHealth = 30;
-        this.speed = 1.5;
+        this.speed = 2.2;
         this.damage = 10;
         this.radius = 14;
         this.color = '#ff4444';
@@ -85,14 +103,13 @@ class BasicEnemy extends Enemy {
         this.shootCooldown = 90;
     }
 
-    update(player, enemies) {
+    update(player, enemies, map) {
         // Move toward player
         const dx = player.x - this.x;
         const dy = player.y - this.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > 0) {
-            this.x += (dx / dist) * this.speed;
-            this.y += (dy / dist) * this.speed;
+            this.moveBy((dx / dist) * this.speed, (dy / dist) * this.speed, map);
         }
 
         // Shoot toward player
@@ -112,7 +129,7 @@ class ShooterEnemy extends Enemy {
         super(x, y, 'shooter');
         this.health = 20;
         this.maxHealth = 20;
-        this.speed = 1.0;
+        this.speed = 1.5;
         this.damage = 15;
         this.radius = 12;
         this.color = '#aa44ff';
@@ -120,20 +137,16 @@ class ShooterEnemy extends Enemy {
         this.shootCooldown = 60;
     }
 
-    update(player, enemies) {
+    update(player, enemies, map) {
         const dx = player.x - this.x;
         const dy = player.y - this.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
-        // Keep distance: stop if closer than 200px
+        // Keep distance: back off inside 180px, close in beyond 250px
         if (dist < 180) {
-            // Move away from player
-            this.x -= (dx / dist) * this.speed;
-            this.y -= (dy / dist) * this.speed;
+            this.moveBy(-(dx / dist) * this.speed, -(dy / dist) * this.speed, map);
         } else if (dist > 250) {
-            // Move closer
-            this.x += (dx / dist) * this.speed;
-            this.y += (dy / dist) * this.speed;
+            this.moveBy((dx / dist) * this.speed, (dy / dist) * this.speed, map);
         }
 
         // Shoot
@@ -152,7 +165,7 @@ class SpiralEnemy extends Enemy {
         super(x, y, 'spiral');
         this.health = 50;
         this.maxHealth = 50;
-        this.speed = 0.8;
+        this.speed = 1.2;
         this.damage = 8;
         this.radius = 16;
         this.color = '#ff8800';
@@ -161,15 +174,14 @@ class SpiralEnemy extends Enemy {
         this.spiralAngle = 0;
     }
 
-    update(player, enemies) {
+    update(player, enemies, map) {
         const dx = player.x - this.x;
         const dy = player.y - this.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         // Move slowly toward player, stop at ~150px
         if (dist > 140) {
-            this.x += (dx / dist) * this.speed;
-            this.y += (dy / dist) * this.speed;
+            this.moveBy((dx / dist) * this.speed, (dy / dist) * this.speed, map);
         }
 
         // Spiral bullet pattern
@@ -195,7 +207,7 @@ class BossEnemy extends Enemy {
         super(x, y, 'boss');
         this.health = 500;
         this.maxHealth = 500;
-        this.speed = 0.5;
+        this.speed = 0.8;
         this.damage = 20;
         this.radius = 40;
         this.color = '#8b0000';
@@ -209,7 +221,7 @@ class BossEnemy extends Enemy {
         this.driftAngle = 0;
     }
 
-    update(player, enemies) {
+    update(player, enemies, map) {
         // Drift in a slow circle around center
         this.driftAngle += 0.01;
         this.x = this.centerX + Math.cos(this.driftAngle) * 80;

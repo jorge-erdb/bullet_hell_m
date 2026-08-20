@@ -22,18 +22,7 @@ debugging path is part of the record, not noise.
   corridors)` as written.
 - **Severity:** 🟢 Dead logic.
 
-### B. No wall collision
-- **File:** `js/player.js` — `update()`
-- **Symptom:** The player can walk freely across the entire 2000×2000 map,
-  including the void between rooms, ignoring room and corridor boundaries.
-- **Cause:** Movement is clamped only to map bounds; room geometry is never
-  consulted.
-- **Fix:** clamp movement to the union of room and corridor rectangles, which
-  is now feasible since corridors have real width.
-- **Severity:** 🟡 Design decision as much as a bug — currently the dungeon is
-  a visual backdrop rather than a constraint.
-
-### C. Boss enemy is unreachable content
+### B. Boss enemy is unreachable content
 - **File:** `js/enemy.js` (`BossEnemy`), `js/map.js` (`assignRoomTypes()`)
 - **Symptom:** A complete multi-phase boss — hexagon rendering, phase indicator,
   wide health bar, distinct attack patterns — never appears in play.
@@ -44,21 +33,7 @@ debugging path is part of the record, not noise.
   that isn't the exit), or delete the class.
 - **Severity:** 🟢 Dead code / missing feature.
 
-### D. Room geometry uses two different conventions
-- **File:** `js/map.js` — `overlapsAny()` vs `calculatePositions()`
-- **Symptom:** None currently observable.
-- **Cause:** `overlapsAny()` treats `(tx, ty)` as the room's **centre**
-  (`tx * tileSize - tw * tileSize / 2`), while `calculatePositions()` treats it
-  as the **top-left** (`x = tx * tileSize`). The drawn rectangle is therefore
-  offset by half a room from the rectangle that was overlap-checked, so the
-  advertised 3-tile spacing guarantee does not strictly hold for drawn rooms.
-- **Verified:** across 300 generated maps, **0** produced overlapping drawn
-  rooms — the centred check is conservative enough to absorb the offset in
-  practice. This is latent, not active.
-- **Fix:** pick one convention and use it in both places.
-- **Severity:** 🟢 Latent inconsistency.
-
-### E. Canvas is not DPI-scaled
+### C. Canvas is not DPI-scaled
 - **File:** `js/main.js`
 - **Symptom:** Rendering is soft on HiDPI/retina displays.
 - **Cause:** The canvas backing store is sized to CSS pixels
@@ -134,42 +109,95 @@ debugging path is part of the record, not noise.
   centre-to-centre.
 - **Status:** ✅ Fixed.
 
-### 5. `gameOver()` left the level-up screen visible 🟡
+### 5. Rooms were smaller than the enemy AI ranges they had to contain 🔴
+- **File:** `js/map.js`, `js/enemy.js`, `js/player.js`, `js/game.js`
+- **Symptom:** Enemies were on top of the player the instant a room was entered,
+  and repeatedly left the room entirely.
+- **Cause:** A geometry contradiction, not a tuning problem. `ShooterEnemy`
+  holds a 180–250 px standoff and `SpiralEnemy` closes to 140 px, but rooms
+  were 128–256 px across. A shooter could not satisfy its standoff without
+  walking out through a wall. Enemies also spawned blind at the room centre,
+  which in a 256 px room is ~128 px from whoever triggered the spawn.
+- **Fix:** rooms scaled to 640–1024 px (map 2000² → 7000², room count 8–12 →
+  6–9, corridors 2 → 4 tiles wide). `spawnPointInRoom()` now retries placement
+  to keep a 280 px minimum from the player, falling back to the best candidate
+  rather than looping. Player speed 3.0 → 4.5 and magnet 60 → 100 to suit the
+  larger space; enemy speeds scaled to match.
+- **Verified:** across 565 sampled combat rooms entered at the doorway, the
+  nearest enemy spawn is never closer than 280 px (median 337 px).
+- **Status:** ✅ Fixed.
+
+### 6. No wall collision 🟡
+- **File:** `js/map.js` (`isWalkable`, `canOccupy`), `js/player.js`,
+  `js/enemy.js` (`moveBy`)
+- **Symptom:** The player could walk across the whole map, including the void
+  between rooms, ignoring all room and corridor boundaries.
+- **Cause:** Movement was clamped only to map bounds; room geometry was never
+  consulted.
+- **Fix:** the walkable area is the union of room and corridor rectangles.
+  Movement resolves per axis so walls are slid along rather than stuck on.
+  Enemies share the test via `Enemy.moveBy()`, which confines them to their
+  room — necessary because they have no pathfinding.
+- **Verified:** 614 live frames with 0 positions inside a wall; flood-fill
+  reachability across 100 maps confirms every room and exit is still reachable
+  on foot, so collision cannot make a level unwinnable.
+- **Status:** ✅ Fixed.
+
+### 7. Room geometry used two different conventions 🔴
+- **File:** `js/map.js` — `overlapsAny()`, `tryPlaceRoom()`, `placeRoom()`
+- **Symptom:** Rooms overlapping on screen. **This was previously logged as a
+  latent issue that never manifested — scaling the rooms up made it active.**
+- **Cause:** `overlapsAny()` treated `(tx, ty)` as the room's **centre** while
+  `calculatePositions()` treated it as the **top-left**, so the rectangle being
+  collision-checked sat half a room away from the one drawn. That offset is
+  half the room size: 64–128 px at the old scale, which the 3-tile gap
+  absorbed, but 320–512 px at the new one, which it could not.
+- **Impact:** serious rather than cosmetic. Overlapping rooms make
+  `pointInRoom()` return whichever room is first in the array, which is the
+  same machinery behind bug 2 — the exit room's rect could cover the player's
+  spawn and resurrect the infinite-transition bug.
+- **Fix:** `(tx, ty)` is now the top-left tile everywhere. `tryPlaceRoom()`
+  butts each room against its parent's edge with the gap, centred on the
+  perpendicular axis so corridors run straight.
+- **Verified:** overlapping maps went 112/200 → **0/200** after the fix.
+- **Status:** ✅ Fixed.
+
+### 8. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 6. Game loop never stopped after game over 🟡
+### 9. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 7. Player could act during room transitions 🟡
+### 10. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 8. Confirm button worked with no upgrade selected 🟢
+### 11. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 9. Only one upgrade shown for a multi-level XP gain 🟢
+### 12. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 10. Redundant `Game.level` 🟢
+### 13. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 11. Over-generous bullet cleanup margin 🟢
+### 14. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 12. Confusing "Full Heal" upgrade 🟢
+### 15. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 13. Debug scaffolding shipped in the build 🟢
+### 16. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -184,6 +212,6 @@ debugging path is part of the record, not noise.
 
 | Severity | Open | Fixed |
 |---|---|---|
-| 🔴 Critical | 0 | 3 |
-| 🟡 Moderate | 1 | 4 |
-| 🟢 Minor | 4 | 6 |
+| 🔴 Critical | 0 | 5 |
+| 🟡 Moderate | 0 | 5 |
+| 🟢 Minor | 3 | 6 |

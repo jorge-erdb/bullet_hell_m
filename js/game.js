@@ -141,7 +141,7 @@ class Game {
 
     /** Generate a new map and populate it. */
     generateMap() {
-        this.map = new Map(2000, 2000);
+        this.map = new Map(7000, 7000);
         this.map.generate();
 
         // Place player at start
@@ -164,7 +164,8 @@ class Game {
 
     /** Spawn enemies for a new room. */
     spawnRoomEnemies(room) {
-        const enemies = this.map.getEnemiesForRoom(room);
+        // Keep spawns clear of the doorway the player just walked through.
+        const enemies = this.map.getEnemiesForRoom(room, this.player);
         this.enemies.push(...enemies);
 
         // Treasure room bonus
@@ -218,7 +219,7 @@ class Game {
         this.camera.y = Math.max(0, Math.min(this.camera.y, this.map.height - this.canvas.height));
 
         // Update player (includes its own bounds clamping)
-        const shouldShoot = this.player.update(this.input, this.camera, this.map.width, this.map.height);
+        const shouldShoot = this.player.update(this.input, this.camera, this.map);
 
         // Player shooting
         if (shouldShoot) {
@@ -230,7 +231,7 @@ class Game {
         const newEnemyBullets = [];
         for (const enemy of this.enemies) {
             if (!enemy.alive) continue;
-            const bullets = enemy.update(this.player, this.enemies);
+            const bullets = enemy.update(this.player, this.enemies, this.map);
             if (bullets) newEnemyBullets.push(...bullets);
         }
         this.enemyBullets.push(...newEnemyBullets);
@@ -436,7 +437,7 @@ class Game {
             const dy = this.player.y - exit.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
 
-            if (dist < 30) {
+            if (dist < 50) {
                 const currentRoom = this.map.getCurrentRoom(this.player.x, this.player.y);
                 if (currentRoom && currentRoom.type === 'exit') {
                     // Guard: skip new transitions while one is already in progress

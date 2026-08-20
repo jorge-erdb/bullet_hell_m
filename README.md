@@ -17,7 +17,7 @@ regenerate a fresh dungeon and keep your build. Die and the run ends.
 
 | | |
 |---|---|
-| **Procedural maps** | Rooms grown outward from a start room, spacing-checked, then typed (combat, hard combat, treasure, empty, exit) and connected by L-shaped corridors |
+| **Procedural maps** | 6–9 rooms grown outward from a start room, spacing-checked, then typed (combat, hard combat, treasure, empty, exit) and connected by corridors you walk down |
 | **Roguelite upgrades** | 10 upgrades drafted 3-at-a-time on level-up — health, damage, speed, multi-shot, pierce, fire rate, bullet speed, pickup magnet |
 | **Enemy variety** | Chasers, shooters that lead their target, and spiral emitters, each with its own movement and firing pattern |
 | **Feel** | Particle bursts on hit and death, invincibility frames after damage, magnet-pull on XP orbs, room-transition fades, live minimap |
@@ -86,11 +86,27 @@ development (see [BUGS.md](BUGS.md)).
 
 ### Coordinate spaces
 
-The world is 2000×2000 px; the canvas is a window onto it. The camera follows
+The world is 7000×7000 px; the canvas is a window onto it. The camera follows
 the player, clamped to the map bounds, and rendering happens inside a
 `ctx.translate(-camera.x, -camera.y)`. Mouse input arrives in **screen** space,
 so aim converts it to **world** space (`camera.x + mouseX`) before computing a
 direction — mixing the two was the project's original critical bug.
+
+### Walls and room scale
+
+The walkable area is the **union** of room and corridor rectangles. Movement is
+resolved one axis at a time, so running diagonally into a wall slides along it
+rather than stopping dead, and `canOccupy()` samples a circle's centre plus its
+four cardinal extremes against that union. Enemies use the same test, which is
+what keeps them in the room they spawned in — they have no pathfinding, so
+without it a chaser would walk through walls and a kiting shooter would reverse
+straight out of the level.
+
+Room size is dictated by enemy AI ranges rather than taste. `ShooterEnemy` holds
+a 180–250 px standoff and `SpiralEnemy` closes to 140 px, so a room has to
+comfortably exceed twice the standoff. Rooms are 640–1024 px for that reason;
+at the original 128–256 px those enemies were pushed through the walls the
+moment the player walked in.
 
 ### Level-ups
 

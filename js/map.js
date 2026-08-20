@@ -10,14 +10,16 @@ class Map {
         this.width = width;
         this.height = height;
         this.tileSize = 32;
-        this.corridorWidth = 64; // 2 tiles
+        this.corridorWidth = 128; // 4 tiles — wide enough to dodge in
         this.rooms = [];
         this.corridors = [];
         this.exit = null;
         this.playerStart = null;
         this.roomsCleared = 0;
         this.totalRooms = 0;
-        this.roomCount = 8 + Math.floor(Math.random() * 5); // 8-12 rooms
+        // Fewer rooms than before, because each one is now several times larger
+        // and carries proportionally more of the run.
+        this.roomCount = 6 + Math.floor(Math.random() * 4); // 6-9 rooms
     }
 
     /** Generate a new map. */
@@ -25,10 +27,13 @@ class Map {
         this.rooms = [];
         this.corridors = [];
 
-        // Place start room at center
-        const startX = Math.floor(this.width / (2 * this.tileSize));
-        const startY = Math.floor(this.height / (2 * this.tileSize));
-        const startRoom = this.placeRoom(startX, startY, 'start', 256);
+        // Place start room at the centre of the map. tx/ty are top-left, so
+        // offset by half the room to actually land centred.
+        const startSize = 640;
+        const startTiles = Math.ceil(startSize / this.tileSize);
+        const startX = Math.floor((this.width / this.tileSize - startTiles) / 2);
+        const startY = Math.floor((this.height / this.tileSize - startTiles) / 2);
+        const startRoom = this.placeRoom(startX, startY, 'start', startSize);
         if (!startRoom) return this.generate(); // retry
 
         // Place additional rooms
@@ -75,25 +80,37 @@ class Map {
     /** Place a room at tile grid position, return room object or null. */
     tryPlaceRoom(parent, offset) {
         // Random size
+        // Room sizes are driven by enemy AI ranges, not aesthetics. ShooterEnemy
+        // holds a 180-250px standoff and SpiralEnemy closes to 140px, so a room
+        // has to comfortably exceed twice the standoff or those enemies are
+        // forced out through the walls the moment the player walks in.
         const sizes = [
-            { w: 4, h: 4 },   // small ~128px
-            { w: 6, h: 6 },   // medium ~192px
-            { w: 8, h: 8 }    // large ~256px
+            { w: 20, h: 20 },  // small ~640px
+            { w: 26, h: 26 },  // medium ~832px
+            { w: 32, h: 32 }   // large ~1024px
         ];
         const size = sizes[Math.floor(Math.random() * sizes.length)];
 
-        // Step far enough that the new room clears the parent AND the 3-tile
-        // gap that overlapsAny() enforces. Stepping by 1 tile put the new room
-        // inside the parent, so every placement was rejected.
+        // Butt the new room against the parent's edge, leaving the same gap
+        // overlapsAny() enforces, and centre it on the perpendicular axis so
+        // the connecting corridor runs straight rather than dog-legging.
         const gap = 3;
-        const stepX = Math.ceil(parent.tw / 2 + size.w / 2) + gap;
-        const stepY = Math.ceil(parent.th / 2 + size.h / 2) + gap;
-        const tileX = parent.tx + offset.dx * stepX;
-        const tileY = parent.ty + offset.dy * stepY;
+        let tileX, tileY;
+        if (offset.dx !== 0) {
+            tileX = offset.dx > 0 ? parent.tx + parent.tw + gap
+                                  : parent.tx - size.w - gap;
+            tileY = parent.ty + Math.round((parent.th - size.h) / 2);
+        } else {
+            tileY = offset.dy > 0 ? parent.ty + parent.th + gap
+                                  : parent.ty - size.h - gap;
+            tileX = parent.tx + Math.round((parent.tw - size.w) / 2);
+        }
 
-        // Check bounds
-        if (tileX - size.w / 2 < 2 || tileX + size.w / 2 > this.width / this.tileSize - 2) return null;
-        if (tileY - size.h / 2 < 2 || tileY + size.h / 2 > this.height / this.tileSize - 2) return null;
+        // Check bounds (tx/ty are top-left)
+        const maxTX = this.width / this.tileSize;
+        const maxTY = this.height / this.tileSize;
+        if (tileX < 2 || tileX + size.w > maxTX - 2) return null;
+        if (tileY < 2 || tileY + size.h > maxTY - 2) return null;
 
         // Check overlap with existing rooms (min 3 tile gap)
         const newRoom = {
@@ -112,8 +129,8 @@ class Map {
         return newRoom;
     }
 
+    /** Place a room whose top-left tile is (tileX, tileY). `size` is in pixels. */
     placeRoom(tileX, tileY, type, size) {
-        const half = Math.floor(size / this.tileSize / 2);
         const newRoom = {
             tx: tileX,
             ty: tileY,
@@ -130,19 +147,28 @@ class Map {
         return newRoom;
     }
 
-    /** Check if a room overlaps any existing room. */
+    /**
+     * Check if a room overlaps any existing room, allowing a minimum gap.
+     *
+     * (tx, ty) is the room's TOP-LEFT tile. This must stay consistent with
+     * calculatePositions(), which derives room.x/room.y the same way — an
+     * earlier version treated it as the room's centre here and as the top-left
+     * there, so the rectangle being collision-checked sat half a room away
+     * from the one actually drawn.
+     */
     overlapsAny(room, minGap) {
-        const rx1 = room.tx * this.tileSize - room.tw * this.tileSize / 2;
-        const ry1 = room.ty * this.tileSize - room.th * this.tileSize / 2;
-        const rx2 = rx1 + room.tw * this.tileSize;
-        const ry2 = ry1 + room.th * this.tileSize;
+        const ts = this.tileSize;
+        const rx1 = room.tx * ts;
+        const ry1 = room.ty * ts;
+        const rx2 = rx1 + room.tw * ts;
+        const ry2 = ry1 + room.th * ts;
 
         for (const other of this.rooms) {
             if (other === room) continue;
-            const ox1 = other.tx * this.tileSize - other.tw * this.tileSize / 2 - minGap * this.tileSize;
-            const oy1 = other.ty * this.tileSize - other.th * this.tileSize / 2 - minGap * this.tileSize;
-            const ox2 = ox1 + other.tw * this.tileSize + minGap * this.tileSize * 2;
-            const oy2 = oy1 + other.th * this.tileSize + minGap * this.tileSize * 2;
+            const ox1 = other.tx * ts - minGap * ts;
+            const oy1 = other.ty * ts - minGap * ts;
+            const ox2 = other.tx * ts + other.tw * ts + minGap * ts;
+            const oy2 = other.ty * ts + other.th * ts + minGap * ts;
 
             if (rx1 < ox2 && rx2 > ox1 && ry1 < oy2 && ry2 > oy1) {
                 return true;
@@ -225,6 +251,18 @@ class Map {
             corr.y2 = corr.b.cy;
         }
 
+        // Flatten corridors to plain rects once. isWalkable() runs several times
+        // per entity per frame, so it must not allocate.
+        this.corridorRects = [];
+        for (const corr of this.corridors) {
+            for (const seg of this.corridorSegments(corr)) {
+                this.corridorRects.push({
+                    x: seg.x1, y: seg.y1,
+                    w: seg.x2 - seg.x1, h: seg.y2 - seg.y1
+                });
+            }
+        }
+
         // Player start: center of first room
         this.playerStart = {
             x: this.rooms[0].cx,
@@ -282,11 +320,36 @@ class Map {
         }
     }
 
-    /** Get enemies for a given room. */
-    getEnemiesForRoom(room) {
+    /**
+     * Pick a spawn point inside a room, kept clear of the player.
+     *
+     * Enemies used to appear right on top of whoever triggered the spawn,
+     * because the sample was taken blind. Retries a bounded number of times,
+     * then falls back to the best candidate found rather than looping forever
+     * in a room too small to satisfy the constraint.
+     */
+    spawnPointInRoom(room, avoid, minDist) {
+        let best = null, bestDist = -1;
+        for (let i = 0; i < 12; i++) {
+            const x = room.cx + (Math.random() - 0.5) * (room.w * 0.6);
+            const y = room.cy + (Math.random() - 0.5) * (room.h * 0.6);
+            if (!avoid) return { x, y };
+            const d = Math.hypot(x - avoid.x, y - avoid.y);
+            if (d >= minDist) return { x, y };
+            if (d > bestDist) { bestDist = d; best = { x, y }; }
+        }
+        return best;
+    }
+
+    /**
+     * Get enemies for a given room.
+     * @param {Object} room
+     * @param {Object|null} avoid - point to keep spawns away from (the player)
+     * @param {number} minDist - how far away to keep them
+     */
+    getEnemiesForRoom(room, avoid = null, minDist = 280) {
         const enemies = [];
-        const cx = room.cx;
-        const cy = room.cy;
+        const spawn = () => this.spawnPointInRoom(room, avoid, minDist);
 
         switch (room.type) {
             case 'start':
@@ -296,20 +359,16 @@ class Map {
             case 'combat':
                 const count = 2 + Math.floor(Math.random() * 3); // 2-4
                 for (let i = 0; i < count; i++) {
-                    const type = randomEnemyType();
-                    const ex = cx + (Math.random() - 0.5) * (room.w * 0.6);
-                    const ey = cy + (Math.random() - 0.5) * (room.h * 0.6);
-                    enemies.push(createEnemy(type, ex, ey));
+                    const p = spawn();
+                    enemies.push(createEnemy(randomEnemyType(), p.x, p.y));
                 }
                 break;
 
             case 'combat-hard':
                 const hCount = 4 + Math.floor(Math.random() * 3); // 4-6
                 for (let i = 0; i < hCount; i++) {
-                    const type = hardEnemyType();
-                    const ex = cx + (Math.random() - 0.5) * (room.w * 0.6);
-                    const ey = cy + (Math.random() - 0.5) * (room.h * 0.6);
-                    enemies.push(createEnemy(type, ex, ey));
+                    const p = spawn();
+                    enemies.push(createEnemy(hardEnemyType(), p.x, p.y));
                 }
                 break;
 
@@ -318,13 +377,11 @@ class Map {
                 break;
 
             case 'boss':
-                enemies.push(createEnemy('boss', cx, cy));
+                enemies.push(createEnemy('boss', room.cx, room.cy));
                 // Add 2 minions
                 for (let i = 0; i < 2; i++) {
-                    const type = randomEnemyType();
-                    const ex = cx + (Math.random() - 0.5) * 200;
-                    const ey = cy + (Math.random() - 0.5) * 200;
-                    enemies.push(createEnemy(type, ex, ey));
+                    const p = spawn();
+                    enemies.push(createEnemy(randomEnemyType(), p.x, p.y));
                 }
                 break;
 
@@ -349,6 +406,40 @@ class Map {
             };
         }
         return null;
+    }
+
+    /**
+     * Is this point on walkable floor — inside a room or a corridor?
+     *
+     * The walkable area is the *union* of room and corridor rectangles, which
+     * matters at junctions: a point in the overlap belongs to both, so the
+     * union test passes cleanly where a per-rect test would snag.
+     */
+    isWalkable(x, y) {
+        for (const room of this.rooms) {
+            if (x >= room.x && x <= room.x + room.w &&
+                y >= room.y && y <= room.y + room.h) return true;
+        }
+        for (const r of this.corridorRects) {
+            if (x >= r.x && x <= r.x + r.w &&
+                y >= r.y && y <= r.y + r.h) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Can a circle of this radius sit at (x, y) without poking through a wall?
+     *
+     * Samples the centre plus the four cardinal extremes. That is not an exact
+     * circle-vs-union test — a convex corner can still be clipped slightly —
+     * but it is cheap, allocation-free, and indistinguishable in play.
+     */
+    canOccupy(x, y, radius) {
+        return this.isWalkable(x, y) &&
+               this.isWalkable(x - radius, y) &&
+               this.isWalkable(x + radius, y) &&
+               this.isWalkable(x, y - radius) &&
+               this.isWalkable(x, y + radius);
     }
 
     /** Check if a point is inside any room. */

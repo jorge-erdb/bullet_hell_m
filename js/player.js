@@ -11,13 +11,13 @@ class Player {
         // Stats
         this.maxHealth = 100;
         this.health = 100;
-        this.speed = 3.0;
+        this.speed = 4.5;
         this.damage = 10;
         this.fireRate = 12;          // frames between shots
         this.bulletSpeed = 7;
         this.bulletCount = 1;        // multi-shot count
         this.bulletPierce = 0;
-        this.magnetRange = 60;
+        this.magnetRange = 100;
 
         // Level / XP
         this.level = 1;
@@ -67,7 +67,7 @@ class Player {
     }
 
     /** Update player position and shooting. */
-    update(input, camera, mapWidth, mapHeight) {
+    update(input, camera, map) {
         // Movement
         let dx = 0, dy = 0;
         if (input.keys['KeyW'] || input.keys['ArrowUp'])    dy -= 1;
@@ -82,13 +82,21 @@ class Player {
             dy *= inv;
         }
 
-        this.x += dx * this.speed;
-        this.y += dy * this.speed;
+        // Resolve each axis separately so that running into a wall diagonally
+        // slides along it instead of stopping dead.
+        if (map) {
+            const nx = this.x + dx * this.speed;
+            if (map.canOccupy(nx, this.y, this.radius)) this.x = nx;
 
-        // Clamp to map bounds
-        if (mapWidth !== undefined) {
-            this.x = Math.max(this.radius, Math.min(this.x, mapWidth - this.radius));
-            this.y = Math.max(this.radius, Math.min(this.y, mapHeight - this.radius));
+            const ny = this.y + dy * this.speed;
+            if (map.canOccupy(this.x, ny, this.radius)) this.y = ny;
+
+            // Bounds clamp is now a backstop; walls do the real work.
+            this.x = Math.max(this.radius, Math.min(this.x, map.width - this.radius));
+            this.y = Math.max(this.radius, Math.min(this.y, map.height - this.radius));
+        } else {
+            this.x += dx * this.speed;
+            this.y += dy * this.speed;
         }
 
         // Aim direction — convert screen-space mouse to world-space
