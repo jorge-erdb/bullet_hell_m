@@ -1,0 +1,677 @@
+/**
+ * Game class — main engine: state machine, entity management, rendering, collision.
+ */
+class Game {
+    constructor(canvas, ui) {
+        this.canvas = canvas;
+        this.ui = ui;
+        this.ctx = canvas.getContext('2d');
+
+        // Game state
+        this.state = 'START'; // START, PLAYING, LEVEL_UP, PAUSED, TRANSITIONING, GAME_OVER
+        this.lastTime = 0;
+        this.frameCount = 0;
+
+        // Input
+        this.input = {
+            keys: {},
+            mouseX: 0,
+            mouseY: 0,
+            mouseDown: false
+        };
+
+        // Camera
+        this.camera = { x: 0, y: 0 };
+
+        // Entities
+        this.player = null;
+        this.enemies = [];
+        this.bullets = [];         // player bullets
+        this.enemyBullets = [];    // enemy bullets
+        this.xpOrbs = [];
+        this.particles = [];
+
+        // Map
+        this.map = null;
+
+        // Stats tracking
+        this.enemiesKilled = 0;
+        this.roomsCleared = 0;
+
+        // Room transition
+        this.transitionAlpha = 0;
+        this.transitioning = false;
+
+        // Room tracking
+        this.currentRoom = null;
+
+        // XP orb collection
+        this.selectedUpgrade = null;
+
+        // Level-ups earned but not yet spent on an upgrade. Player.gainXP()
+        // performs the level itself, so this queue is what drives the screen.
+        this.pendingLevelUps = 0;
+
+        // Loop control
+        this.loopRunning = false;
+        this.totalDamageAttempts = 0;
+
+        // Bind input handlers
+        this.bindInput();
+
+        // Upgrade definitions
+        this.upgrades = [
+            { name: 'Vitality', description: '+20 Max Health, heal to full', apply: (p) => { p.maxHealth += 20; p.health = p.maxHealth; } },
+            { name: 'Power', description: '+5 Damage', apply: (p) => { p.damage += 5; } },
+            { name: 'Swiftness', description: '+0.5 Speed', apply: (p) => { p.speed += 0.5; } },
+            { name: 'Multi-Shot', description: '+1 Bullet Count (max 7)', apply: (p) => { if (p.bulletCount < 7) p.bulletCount++; } },
+            { name: 'Pierce', description: '+1 Bullet Pierce', apply: (p) => { p.bulletPierce++; } },
+            { name: 'Rapid Fire', description: '+10% Fire Rate', apply: (p) => { p.fireRate = Math.max(4, Math.floor(p.fireRate * 0.9)); } },
+            { name: 'Bullet Speed', description: '+1 Bullet Speed', apply: (p) => { p.bulletSpeed += 1; } },
+            { name: 'Magnet', description: '+15 Magnet Range', apply: (p) => { p.magnetRange += 15; } },
+            { name: 'Full Heal', description: 'Restore all health', apply: (p) => { p.health = p.maxHealth; } },
+            { name: 'Power Surge', description: '+30% Damage (Rare)', apply: (p) => { p.damage = Math.floor(p.damage * 1.3); }, rarity: 'rare' }
+        ];
+    }
+
+    /** Set up input event listeners. */
+    bindInput() {
+        window.addEventListener('keydown', (e) => {
+            this.input.keys[e.code] = true;
+            if (e.code === 'Space' && this.state === 'PLAYING') {
+                this.state = 'PAUSED';
+                this.ui.showPause();
+            } else if (e.code === 'Space' && this.state === 'PAUSED') {
+                this.state = 'PLAYING';
+                // Do NOT clear loopRunning here: loop() keeps calling
+                // requestAnimationFrame while PAUSED, so the chain is still
+                // alive. Clearing the flag lets startLoop() spawn a second one.
+                this.totalDamageAttempts = 0;
+                this.ui.hidePause();
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            this.input.keys[e.code] = false;
+        });
+
+        this.canvas.addEventListener('mousemove', (e) => {
+            const rect = this.canvas.getBoundingClientRect();
+            this.input.mouseX = e.clientX - rect.left;
+            this.input.mouseY = e.clientY - rect.top;
+        });
+
+        this.canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) this.input.mouseDown = true;
+        });
+
+        this.canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 0) this.input.mouseDown = false;
+        });
+
+        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+        // Resize
+        window.addEventListener('resize', () => {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = window.innerHeight;
+        });
+    }
+
+    /** Start a new game. */
+    start() {
+        this.enemiesKilled = 0;
+        this.roomsCleared = 0;
+
+        // Create player at map center
+        this.player = new Player(0, 0);
+        this.generateMap();
+
+        // Reset input
+        this.input.mouseDown = false;
+
+        // Show HUD
+        this.ui.showHUD(true);
+        this.ui.hideStart();
+        this.ui.hideGameOver();
+        this.ui.hideLevelUp();
+
+        this.state = 'PLAYING';
+        this.loopRunning = false;
+        this.totalDamageAttempts = 0;
+        this.pendingLevelUps = 0;
+    }
+
+    /** Generate a new map and populate it. */
+    generateMap() {
+        this.map = new Map(2000, 2000);
+        this.map.generate();
+
+        // Place player at start
+        this.player.x = this.map.playerStart.x;
+        this.player.y = this.map.playerStart.y;
+
+        // Spawn enemies for the starting room
+        this.enemies = [];
+        this.currentRoom = null; // Reset room tracking for new map
+        const startRoom = this.map.rooms[0];
+        const enemies = this.map.getEnemiesForRoom(startRoom);
+        this.enemies.push(...enemies);
+
+        // Clear other entities
+        this.bullets = [];
+        this.enemyBullets = [];
+        this.xpOrbs = [];
+        this.particles = [];
+    }
+
+    /** Spawn enemies for a new room. */
+    spawnRoomEnemies(room) {
+        const enemies = this.map.getEnemiesForRoom(room);
+        this.enemies.push(...enemies);
+
+        // Treasure room bonus
+        const treasure = this.map.getTreasureForRoom(room);
+        if (treasure) {
+            this.player.heal(treasure.heal);
+            if (this.player.gainXP(treasure.xp)) this.pendingLevelUps++;
+            this.ui.drawNotification(this.ctx, `Treasure Room! +${treasure.heal} HP, +${treasure.xp} XP`);
+        }
+    }
+
+    /** Start the game loop. */
+    startLoop() {
+        this.lastTime = performance.now();
+        if (this.loopRunning) return;
+        this.loopRunning = true;
+        this.loop(this.lastTime);
+    }
+
+    /** Main game loop. */
+    loop(timestamp) {
+        const dt = timestamp - this.lastTime;
+        this.lastTime = timestamp;
+        this.frameCount++;
+
+        if (this.state === 'PLAYING') {
+            this.update(dt);
+            this.render();
+        } else if (this.state === 'TRANSITIONING') {
+            this.render(); // Keep rendering, just don't update
+        } else if (this.state === 'PAUSED') {
+            this.render(); // Keep rendering, just don't update
+        } else if (this.state === 'LEVEL_UP') {
+            this.render(); // Keep last frame visible while player chooses upgrade
+        } else if (this.state === 'GAME_OVER') {
+            this.render(); // Keep last frame visible
+            return; // Stop the loop
+        }
+
+        requestAnimationFrame((t) => this.loop(t));
+    }
+
+    /** Update all game systems. */
+    update(dt) {
+        // Update camera to follow player (must be before player.update for correct aim)
+        this.camera.x = this.player.x - this.canvas.width / 2;
+        this.camera.y = this.player.y - this.canvas.height / 2;
+
+        // Clamp camera to map bounds
+        this.camera.x = Math.max(0, Math.min(this.camera.x, this.map.width - this.canvas.width));
+        this.camera.y = Math.max(0, Math.min(this.camera.y, this.map.height - this.canvas.height));
+
+        // Update player (includes its own bounds clamping)
+        const shouldShoot = this.player.update(this.input, this.camera, this.map.width, this.map.height);
+
+        // Player shooting
+        if (shouldShoot) {
+            const newBullets = this.player.shoot();
+            this.bullets.push(...newBullets);
+        }
+
+        // Update enemies
+        const newEnemyBullets = [];
+        for (const enemy of this.enemies) {
+            if (!enemy.alive) continue;
+            const bullets = enemy.update(this.player, this.enemies);
+            if (bullets) newEnemyBullets.push(...bullets);
+        }
+        this.enemyBullets.push(...newEnemyBullets);
+
+        // Update player bullets
+        this.updatePlayerBullets();
+
+        // Update enemy bullets
+        this.updateEnemyBullets();
+
+        // Update XP orbs (may trigger level up → changes state)
+        this.updateXPOrbs();
+        if (this.state !== 'PLAYING') return; // Level up or game over triggered
+
+        // Update particles
+        this.updateParticles();
+
+        // Clean up dead enemies from the array
+        this.enemies = this.enemies.filter(e => e.alive);
+
+        // Check room transitions
+        this.checkRoomTransition();
+
+        // Check death
+        if (this.player.health <= 0) {
+            this.gameOver();
+            return;
+        }
+
+        // Update HUD
+        this.ui.updateHUD(this.player, this.map, `invTimer: ${this.player.invincibleTimer} | enemyBullets: ${this.enemyBullets.length}`);
+    }
+
+    /** Update player bullets (movement + collision). */
+    updatePlayerBullets() {
+        const toRemove = new Set();
+
+        for (const bullet of this.bullets) {
+            bullet.x += bullet.vx;
+            bullet.y += bullet.vy;
+
+            // Check collision with enemies
+            for (const enemy of this.enemies) {
+                if (!enemy.alive || toRemove.has(bullet)) continue;
+                if (circleCollision(bullet.x, bullet.y, bullet.radius, enemy.x, enemy.y, enemy.radius)) {
+                    enemy.takeDamage(bullet.damage);
+                    bullet.hits++;
+
+                    // Spawn hit particles
+                    this.spawnParticles(bullet.x, bullet.y, enemy.color, 3);
+
+                    if (bullet.hits > bullet.pierce) {
+                        toRemove.add(bullet);
+                    }
+
+                    if (!enemy.alive) {
+                        this.enemyKilled(enemy);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Remove dead bullets and out-of-bounds
+        this.bullets = this.bullets.filter(b => !toRemove.has(b));
+        this.bullets = removeDead(this.bullets, 50, this.map.width, this.map.height);
+    }
+
+    /** Update enemy bullets (movement + collision with player). */
+    updateEnemyBullets() {
+        let hitsThisFrame = 0;
+        for (const bullet of this.enemyBullets) {
+            bullet.x += bullet.vx;
+            bullet.y += bullet.vy;
+
+            // Check collision with player
+            if (bulletHitsPlayer(bullet, this.player)) {
+                this.player.takeDamage(bullet.damage);
+                this.spawnParticles(this.player.x, this.player.y, '#ff4444', 5);
+                bullet.damage = 0; // Mark as consumed
+                hitsThisFrame++;
+            }
+        }
+
+        // Debug: log hit info every 60 frames
+        if (this.frameCount % 60 === 0) {
+            const debugEl = document.getElementById('debug-info');
+            if (debugEl) {
+                debugEl.textContent = `invTimer: ${this.player.invincibleTimer} | hits/frame: ~${hitsThisFrame} | enemyBullets: ${this.enemyBullets.length}`;
+            }
+        }
+
+        // Remove dead/offscreen bullets
+        this.enemyBullets = this.enemyBullets.filter(b => b.damage > 0);
+        this.enemyBullets = removeDead(this.enemyBullets, 50, this.map.width, this.map.height);
+    }
+
+    /** Update XP orbs (drift + magnet pull to player). */
+    updateXPOrbs() {
+        for (const orb of this.xpOrbs) {
+            // Gentle drift
+            orb.x += orb.vx;
+            orb.y += orb.vy;
+            orb.vx *= 0.98;
+            orb.vy *= 0.98;
+
+            // Magnet pull toward player
+            const dx = this.player.x - orb.x;
+            const dy = this.player.y - orb.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < this.player.magnetRange) {
+                const speed = 4 * (1 - dist / this.player.magnetRange);
+                orb.x += (dx / dist) * speed;
+                orb.y += (dy / dist) * speed;
+            }
+
+            // Collection
+            if (dist < this.player.radius + orb.radius) {
+                if (this.player.gainXP(orb.value)) this.pendingLevelUps++;
+                this.spawnParticles(orb.x, orb.y, '#a855f7', 2);
+                orb.collected = true;
+            }
+        }
+
+        // Remove collected orbs
+        this.xpOrbs = this.xpOrbs.filter(o => !o.collected);
+
+        // Handle level-ups (may be multiple from a single orb)
+        // Show one upgrade screen per queued level. Don't re-derive this from
+        // player.xp: gainXP() has already subtracted the cost and raised the
+        // threshold, so `xp >= xpToNext()` is false and the screen never opens.
+        // applyUpgrade() returns to PLAYING and the next frame drains one more.
+        if (this.pendingLevelUps > 0) {
+            this.pendingLevelUps--;
+            this.handleLevelUp();
+        }
+    }
+
+    /** Update particles. */
+    updateParticles() {
+        for (const p of this.particles) {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.life--;
+            p.radius *= 0.95;
+        }
+
+        this.particles = this.particles.filter(p => p.life > 0);
+    }
+
+    /** Handle enemy death. */
+    enemyKilled(enemy) {
+        this.enemiesKilled++;
+
+        // Spawn death particles
+        this.spawnParticles(enemy.x, enemy.y, enemy.color, 8);
+
+        // Drop XP orbs
+        const orbCount = Math.max(1, Math.ceil(enemy.xpValue / 5));
+        for (let i = 0; i < orbCount; i++) {
+            this.xpOrbs.push({
+                x: enemy.x + (Math.random() - 0.5) * 20,
+                y: enemy.y + (Math.random() - 0.5) * 20,
+                vx: (Math.random() - 0.5) * 2,
+                vy: (Math.random() - 0.5) * 2,
+                value: Math.ceil(enemy.xpValue / orbCount),
+                radius: 4,
+                color: '#a855f7',
+                collected: false
+            });
+        }
+    }
+
+    /** Spawn particles at a position. */
+    spawnParticles(x, y, color, count) {
+        for (let i = 0; i < count; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = 1 + Math.random() * 3;
+            this.particles.push({
+                x: x,
+                y: y,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed,
+                life: 20 + Math.random() * 15,
+                maxLife: 35,
+                color: color,
+                radius: 2 + Math.random() * 3
+            });
+        }
+    }
+
+    /** Check for room transitions (exit, clearing rooms, room entry). */
+    checkRoomTransition() {
+        const newRoom = this.map.getCurrentRoom(this.player.x, this.player.y);
+
+        // Detect room entry — spawn enemies for new rooms
+        if (newRoom && newRoom !== this.currentRoom) {
+            // Only spawn the first time the player enters this room.
+            // Use `spawned`, not `cleared`: every room starts out empty, so
+            // `cleared` is already true before the player has ever been there.
+            if (!newRoom.spawned && newRoom.type !== 'start') {
+                this.spawnRoomEnemies(newRoom);
+            }
+            newRoom.spawned = true;
+            this.currentRoom = newRoom;
+        }
+
+        // Check if player is at exit
+        if (this.map.exit) {
+            const exit = this.map.exit;
+            const dx = this.player.x - exit.x;
+            const dy = this.player.y - exit.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < 30) {
+                const currentRoom = this.map.getCurrentRoom(this.player.x, this.player.y);
+                if (currentRoom && currentRoom.type === 'exit') {
+                    // Guard: skip new transitions while one is already in progress
+                    if (this.transitioning) return;
+
+                    this.transitioning = true;
+                    this.transitionAlpha = 0;
+                    this.state = 'TRANSITIONING';
+
+                    // Animate fade
+                    const fadeInterval = setInterval(() => {
+                        this.transitionAlpha += 0.05;
+                        if (this.transitionAlpha >= 1) {
+                            clearInterval(fadeInterval);
+                            this.generateMap();
+                            this.transitionAlpha = 1;
+
+                            const fadeBack = setInterval(() => {
+                                this.transitionAlpha -= 0.05;
+                                if (this.transitionAlpha <= 0) {
+                                    this.transitioning = false;
+                                    this.transitionAlpha = 0;
+                                    this.totalDamageAttempts = 0;
+                                    this.state = 'PLAYING';
+                                    clearInterval(fadeBack);
+                                    // Restart the game loop so player can continue playing
+                                    this.startLoop();
+                                }
+                            }, 16);
+                        }
+                    }, 16);
+                }
+            }
+        }
+        // Track cleared rooms
+        for (const room of this.map.rooms) {
+            // A room the player has never entered isn't "cleared" — it's unvisited.
+            if (room.spawned && !room.cleared && this.isRoomCleared(room)) {
+                this.map.clearRoom(room);
+                this.roomsCleared++;
+            }
+        }
+    }
+
+    /** Check if all enemies in a room are dead. */
+    isRoomCleared(room) {
+        for (const enemy of this.enemies) {
+            if (!enemy.alive) continue;
+            if (enemy.x >= room.x && enemy.x < room.x + room.w &&
+                enemy.y >= room.y && enemy.y < room.y + room.h) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** Handle level up — show upgrade selection. */
+    handleLevelUp() {
+        this.state = 'LEVEL_UP';
+
+        // Pick 3 random upgrades
+        const shuffled = [...this.upgrades].sort(() => Math.random() - 0.5);
+        const choices = shuffled.slice(0, 3);
+
+        this.selectedUpgrade = null;
+
+        this.ui.showLevelUp(choices, (upgrade) => {
+            this.selectedUpgrade = upgrade;
+        });
+    }
+
+    /** Apply the selected upgrade. */
+    applyUpgrade() {
+        if (!this.selectedUpgrade) {
+            // Show a brief notification that no upgrade was selected
+            this.ui.drawNotification(this.ctx, 'No upgrade selected!');
+            return;
+        }
+
+        this.selectedUpgrade.apply(this.player);
+        this.ui.hideLevelUp();
+        // Same as unpause: the LEVEL_UP branch of loop() never stopped the RAF
+        // chain, so loopRunning must stay true.
+        this.totalDamageAttempts = 0;
+        this.state = 'PLAYING';
+    }
+
+    /** Handle game over. */
+    gameOver() {
+        this.state = 'GAME_OVER';
+        this.ui.hideLevelUp();
+        this.ui.showHUD(false);
+        this.ui.showGameOver(this.player.level, this.roomsCleared, this.enemiesKilled);
+        this.loopRunning = false;
+        this.totalDamageAttempts = 0;
+    }
+
+    /** Render the game. */
+    render() {
+        const ctx = this.ctx;
+        const W = this.canvas.width;
+        const H = this.canvas.height;
+
+        // Clear
+        ctx.fillStyle = '#0a0a0f';
+        ctx.fillRect(0, 0, W, H);
+
+        // Apply camera transform
+        ctx.save();
+        ctx.translate(-this.camera.x, -this.camera.y);
+
+        // Draw map
+        if (this.map) {
+            this.map.draw(ctx, this.camera);
+        }
+
+        // Draw XP orbs
+        for (const orb of this.xpOrbs) {
+            ctx.beginPath();
+            ctx.arc(orb.x, orb.y, orb.radius, 0, Math.PI * 2);
+            ctx.fillStyle = orb.color;
+            ctx.fill();
+
+            // Glow
+            ctx.beginPath();
+            ctx.arc(orb.x, orb.y, orb.radius + 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(168, 85, 247, 0.2)';
+            ctx.fill();
+        }
+
+        // Draw particles (behind entities)
+        for (const p of this.particles) {
+            const alpha = p.life / p.maxLife;
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+            ctx.fillStyle = p.color;
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+
+        // Draw enemies
+        for (const enemy of this.enemies) {
+            if (!enemy.alive) continue;
+            enemy.draw(ctx);
+        }
+
+        // Draw player bullets
+        for (const bullet of this.bullets) {
+            ctx.beginPath();
+            ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+            ctx.fillStyle = bullet.color;
+            ctx.fill();
+
+            // Glow effect
+            ctx.beginPath();
+            ctx.arc(bullet.x, bullet.y, bullet.radius + 3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(79, 195, 247, 0.3)';
+            ctx.fill();
+        }
+
+        // Draw enemy bullets
+        for (const bullet of this.enemyBullets) {
+            ctx.beginPath();
+            ctx.arc(bullet.x, bullet.y, bullet.radius, 0, Math.PI * 2);
+            ctx.fillStyle = bullet.color;
+            ctx.fill();
+
+            // Glow
+            ctx.beginPath();
+            ctx.arc(bullet.x, bullet.y, bullet.radius + 4, 0, Math.PI * 2);
+            ctx.fillStyle = `${bullet.color}44`;
+            ctx.fill();
+        }
+
+        // Draw player
+        if (this.player && this.player.health > 0) {
+            this.player.draw(ctx);
+        }
+
+        // Draw exit indicator
+        if (this.map && this.map.exit) {
+            const exit = this.map.exit;
+            const dx = this.player.x - exit.x;
+            const dy = this.player.y - exit.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist > 100) {
+                // Arrow pointing to exit
+                const angle = Math.atan2(dy, dx);
+                const arrowDist = 50;
+                const ax = this.player.x + Math.cos(angle) * arrowDist;
+                const ay = this.player.y + Math.sin(angle) * arrowDist;
+
+                ctx.save();
+                ctx.translate(ax, ay);
+                ctx.rotate(angle);
+                ctx.beginPath();
+                ctx.moveTo(10, 0);
+                ctx.lineTo(-5, -7);
+                ctx.lineTo(-5, 7);
+                ctx.closePath();
+                ctx.fillStyle = 'rgba(76, 175, 80, 0.6)';
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        ctx.restore();
+
+        // Transition fade
+        if (this.transitioning) {
+            ctx.fillStyle = `rgba(10, 10, 15, ${this.transitionAlpha})`;
+            ctx.fillRect(0, 0, W, H);
+        }
+
+        // Render notifications
+        this.ui.renderNotification(ctx);
+
+        // Draw minimap
+        if (this.map && this.player) {
+            this.ui.drawMinimap(this.map, this.camera, this.player);
+        }
+    }
+}
