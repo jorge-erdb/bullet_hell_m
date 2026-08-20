@@ -1,4 +1,4 @@
-# Bug Tracker — Bullet Hell
+# Bug Tracker — Abyss Engine
 
 Engineering log for the project. Fixed entries are kept deliberately: the
 debugging path is part of the record, not noise.

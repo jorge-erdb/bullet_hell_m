@@ -1,10 +1,13 @@
-# Bullet Hell — Procedural Dodge Action
+# Abyss Engine
 
-A top-down bullet hell / roguelite that runs entirely in the browser. No game
+*A procedural bullet hell that runs in the browser.*
+
+A top-down bullet hell roguelite. Descend a procedurally generated dungeon,
+find the boss holding each floor, and kill it to open the way down. No game
 engine, no build step, no dependencies — just HTML, CSS and vanilla JavaScript
 drawing to a single `<canvas>`.
 
-**▶ [Play it here](#)** &nbsp;·&nbsp; *(link goes live once GitHub Pages is enabled — see [Deployment](#deployment))*
+**▶ [Play it](https://jorge-erdb.com/abyss-engine/)** &nbsp;·&nbsp; *(live once GitHub Pages is enabled — see [Deployment](#deployment))*
 
 ---
 
@@ -59,8 +62,8 @@ movement and aim, and portrait puts both thumbs over the play area.
 There is no build step. Any static file server works:
 
 ```bash
-git clone https://github.com/jorge-erdb/bullet_hell_m.git
-cd bullet_hell_m
+git clone https://github.com/jorge-erdb/abyss-engine.git
+cd abyss-engine
 python3 -m http.server 8000
 # open http://localhost:8000
 ```
@@ -266,6 +269,14 @@ that grants two levels therefore shows two upgrade drafts, not one.
 The repo is a static site — the root is publishable as-is. To serve it from
 GitHub Pages: **Settings → Pages → Source: `main` / root**. A `.nojekyll` file
 is included so Pages serves every file verbatim instead of running Jekyll.
+
+Because a custom domain is set on the account's user site, project pages
+inherit it: this repo publishes to `jorge-erdb.com/abyss-engine/`. The repo
+name *is* the URL path, so renaming the repo moves the site.
+
+Note that music needs to be served over HTTP. Opening `index.html` from disk
+works, but `fetch` is blocked on `file://`, so playback falls back to a plain
+audio element and loses its loop points.
 
 ## Project status
 
