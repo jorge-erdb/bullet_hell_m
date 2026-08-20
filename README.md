@@ -10,17 +10,22 @@ drawing to a single `<canvas>`.
 
 ## What it does
 
-Each run drops you into a procedurally generated dungeon of 8–12 rooms. Rooms
-populate with enemies the first time you enter them, killing enemies drops XP
-orbs, and collecting enough XP opens an upgrade draft. Find the exit to
-regenerate a fresh dungeon and keep your build. Die and the run ends.
+Each run drops you into a procedurally generated dungeon. Rooms populate with
+enemies the first time you enter them, killing enemies drops XP orbs, and
+collecting enough XP opens an upgrade draft.
+
+There is **no exit** when a floor begins. One room holds a boss, and the way
+down only opens once it is dead — so a floor has to be explored rather than
+walked past. Descend to regenerate a fresh dungeon and keep your build. Die and
+the run ends.
 
 | | |
 |---|---|
 | **Procedural maps** | 6–9 rooms grown outward from a start room, spacing-checked, then typed (combat, hard combat, treasure, empty, exit) and connected by corridors you walk down |
 | **Roguelite upgrades** | 10 upgrades drafted 3-at-a-time on level-up — health, damage, speed, multi-shot, pierce, fire rate, bullet speed, pickup magnet |
 | **Enemy variety** | Chasers, shooters that lead their target, and spiral emitters, each with its own movement and firing pattern |
-| **Difficulty ramp** | Enemy movement, fire rate and bullet speed ease in over the first 10 floors rather than starting at full strength |
+| **Difficulty ramp** | Enemy movement, fire rate and bullet speed ease in over the first 10 floors, then health, damage and room population keep climbing indefinitely |
+| **Boss gate** | Each floor's exit is locked behind a multi-phase boss, and opens where you kill it |
 | **Sound** | Effects synthesized live via Web Audio — no samples to download — over a three-track soundtrack that advances each floor |
 | **Feel** | Screen shake and damage flash on hit, low-health pulse, invincibility blink, particle bursts, magnet-pull on XP orbs, live minimap with threats |
 | **Presentation** | Loose modern retro on a chunky pixel grid, DOOM-register palette — rust and dried blood, hot amber for anything urgent |
@@ -211,6 +216,37 @@ into clipping mush.
 Music loops only the musical body of each track, skipping any fade-out, with
 loop points detected from an RMS profile and snapped to zero crossings. See
 [audio/README.md](audio/README.md).
+
+### The boss gate
+
+`setBossRoom()` marks the room farthest from the start — never the start room
+itself. No exit exists at generation: `map.exit` is `null` until
+`onBossDefeated()` calls `openExit()`.
+
+The exit is placed as far from the player as the room allows, from a set of
+corner and centre candidates. That is not cosmetic: dropping it underfoot would
+trigger the descent the instant the boss died, with no agency — and spawning a
+player onto a live exit is exactly the bug that once locked the game into an
+endless transition loop.
+
+Because there is nothing to walk toward early on, the on-screen chevron points
+at the boss room (red) until the exit exists, then at the exit (green). The
+minimap does the same.
+
+### Difficulty past the ramp
+
+The ramp only eases floors 1–10. `endgameFloors()` counts floors beyond it and
+`ENDGAME` drives growth from there: health climbs uncapped as the main pressure,
+while damage, speed and fire rate are capped hard — an enemy faster than the
+player, or firing continuously, stops being a challenge and becomes unfair.
+Room population grows by one enemy every four floors, and XP values rise so
+levelling keeps some pace.
+
+| Floor | Chaser HP | Damage | Speed | Cooldown | Extra/room |
+|---|---|---|---|---|---|
+| 10 | 30 | 10 | 2.20 | 90 | +0 |
+| 20 | 78 | 15 | 2.64 | 65 | +2 |
+| 50 | 222 | 22 (cap) | 2.86 (cap) | 54 (floor) | +10 |
 
 ### Bullets and walls
 

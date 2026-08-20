@@ -18,7 +18,8 @@ class DungeonMap {
         this.corridorWidth = 128; // 4 tiles — wide enough to dodge in
         this.rooms = [];
         this.corridors = [];
-        this.exit = null;
+        this.exit = null;      // created by openExit() once the boss is dead
+        this.bossRoom = null;
         this.playerStart = null;
         this.roomsCleared = 0;
         this.totalRooms = 0;
@@ -69,8 +70,10 @@ class DungeonMap {
         // Assign room types
         this.assignRoomTypes();
 
-        // Mark exit room
-        this.setExitRoom();
+        // Mark the boss room. There is deliberately no exit yet — it only
+        // opens once the boss is dead, which is what stops a player walking
+        // straight past every fight to the stairs.
+        this.setBossRoom();
 
         // Calculate pixel positions
         this.calculatePositions();
@@ -218,10 +221,12 @@ class DungeonMap {
         }
     }
 
-    /** Set the last room as the exit room. */
-    setExitRoom() {
-        // Never mark the start room as the exit: the player spawns on the exit
-        // and re-triggers the room transition every frame.
+    /**
+     * Mark the room farthest from the start as the boss room.
+     *
+     * Never the start room: the player would spawn on top of the boss.
+     */
+    setBossRoom() {
         const candidates = this.rooms.filter(r => r.type !== 'start');
         if (candidates.length === 0) return;
 
@@ -234,7 +239,37 @@ class DungeonMap {
             const d = dx * dx + dy * dy;
             if (d > bestDist) { bestDist = d; best = room; }
         }
-        best.type = 'exit';
+        best.type = 'boss';
+        this.bossRoom = best;
+    }
+
+    /**
+     * Open the exit inside a room, once the boss is down.
+     *
+     * Placed as far from the player as the room allows. Dropping it on top of
+     * whoever just killed the boss would trigger the descent instantly, with
+     * no agency — and spawning a player onto a live exit is exactly the bug
+     * that used to lock the game in an endless transition loop.
+     */
+    openExit(room, awayFrom) {
+        if (!room) return;
+        const inset = 60;
+        const candidates = [
+            { x: room.x + inset,          y: room.y + inset },
+            { x: room.x + room.w - inset, y: room.y + inset },
+            { x: room.x + inset,          y: room.y + room.h - inset },
+            { x: room.x + room.w - inset, y: room.y + room.h - inset },
+            { x: room.cx,                 y: room.cy }
+        ];
+
+        let best = candidates[0], bestDist = -1;
+        for (const c of candidates) {
+            const d = awayFrom ? Math.hypot(c.x - awayFrom.x, c.y - awayFrom.y) : 0;
+            if (d > bestDist) { bestDist = d; best = c; }
+        }
+
+        this.exit = { x: best.x, y: best.y, room };
+        return this.exit;
     }
 
     /** Calculate pixel positions and centers for each room. */
@@ -274,15 +309,8 @@ class DungeonMap {
             y: this.rooms[0].cy
         };
 
-        // Exit: center of exit room
-        const exitRoom = this.rooms.find(r => r.type === 'exit');
-        if (exitRoom) {
-            this.exit = {
-                x: exitRoom.cx,
-                y: exitRoom.cy,
-                room: exitRoom
-            };
-        }
+        // No exit at generation time — openExit() creates it when the boss dies.
+        this.exit = null;
     }
 
     /** Ensure all rooms are reachable from start via BFS. */
@@ -352,9 +380,11 @@ class DungeonMap {
      * @param {Object|null} avoid - point to keep spawns away from (the player)
      * @param {number} minDist - how far away to keep them
      */
-    getEnemiesForRoom(room, avoid = null, minDist = 280) {
+    getEnemiesForRoom(room, avoid = null, minDist = 280, floor = 1) {
         const enemies = [];
         const spawn = () => this.spawnPointInRoom(room, avoid, minDist);
+        // Past the ramp, rooms get steadily busier as well as tougher.
+        const extra = Math.floor(endgameFloors(floor) / ENDGAME.countEvery);
 
         switch (room.type) {
             case 'start':
@@ -362,7 +392,7 @@ class DungeonMap {
                 break;
 
             case 'combat':
-                const count = 2 + Math.floor(Math.random() * 3); // 2-4
+                const count = 2 + Math.floor(Math.random() * 3) + extra; // 2-4 (+endgame)
                 for (let i = 0; i < count; i++) {
                     const p = spawn();
                     enemies.push(createEnemy(randomEnemyType(), p.x, p.y));
@@ -370,7 +400,7 @@ class DungeonMap {
                 break;
 
             case 'combat-hard':
-                const hCount = 4 + Math.floor(Math.random() * 3); // 4-6
+                const hCount = 4 + Math.floor(Math.random() * 3) + extra; // 4-6 (+endgame)
                 for (let i = 0; i < hCount; i++) {
                     const p = spawn();
                     enemies.push(createEnemy(hardEnemyType(), p.x, p.y));
@@ -383,8 +413,8 @@ class DungeonMap {
 
             case 'boss':
                 enemies.push(createEnemy('boss', room.cx, room.cy));
-                // Add 2 minions
-                for (let i = 0; i < 2; i++) {
+                // Minions, growing with depth
+                for (let i = 0; i < 2 + extra; i++) {
                     const p = spawn();
                     enemies.push(createEnemy(randomEnemyType(), p.x, p.y));
                 }
@@ -546,6 +576,13 @@ class DungeonMap {
             pixelRect(ctx, e.x, e.y, 54, 30, PALETTE.exit);
             pixelRect(ctx, e.x, e.y, 44, 20, '#0d2a12');
             pixelRect(ctx, e.x, e.y, 10, 14, PALETTE.exit);
+        }
+
+        // Boss room marker, until the exit replaces it
+        if (this.bossRoom && !this.exit) {
+            const r = this.bossRoom;
+            pixelFrame(ctx, r.cx - 26, r.cy - 26, 52, 52, 3, PALETTE.blood);
+            pixelRect(ctx, r.cx, r.cy, 16, 16, PALETTE.danger);
         }
 
         // Start pad

@@ -223,7 +223,7 @@ class Game {
      */
     scaleToFloor(enemies) {
         const t = difficultyForFloor(this.floor);
-        for (const enemy of enemies) enemy.applyDifficulty(t);
+        for (const enemy of enemies) enemy.applyDifficulty(t, this.floor);
         return enemies;
     }
 
@@ -240,7 +240,8 @@ class Game {
         this.enemies = [];
         this.currentRoom = null; // Reset room tracking for new map
         const startRoom = this.map.rooms[0];
-        const enemies = this.scaleToFloor(this.map.getEnemiesForRoom(startRoom));
+        const enemies = this.scaleToFloor(
+            this.map.getEnemiesForRoom(startRoom, null, 280, this.floor));
         this.enemies.push(...enemies);
 
         // Clear other entities
@@ -253,7 +254,8 @@ class Game {
     /** Spawn enemies for a new room. */
     spawnRoomEnemies(room) {
         // Keep spawns clear of the doorway the player just walked through.
-        const enemies = this.scaleToFloor(this.map.getEnemiesForRoom(room, this.player));
+        const enemies = this.scaleToFloor(
+            this.map.getEnemiesForRoom(room, this.player, 280, this.floor));
         this.enemies.push(...enemies);
 
         // Treasure room bonus
@@ -518,6 +520,8 @@ class Game {
     enemyKilled(enemy) {
         this.enemiesKilled++;
 
+        if (enemy.type === 'boss') this.onBossDefeated();
+
         // Spawn death particles
         this.spawnParticles(enemy.x, enemy.y, enemy.color, 8);
         this.addImpact(enemy.type === 'boss' ? 7 : 2, 0);
@@ -537,6 +541,22 @@ class Game {
                 collected: false
             });
         }
+    }
+
+    /**
+     * The boss is down — open the way out.
+     *
+     * The exit appears in the room the player is standing in, falling back to
+     * the boss room if they landed the kill from a corridor. It is placed as
+     * far from them as the room allows: dropping it underfoot would trigger
+     * the descent instantly, with no agency.
+     */
+    onBossDefeated() {
+        const room = this.map.getCurrentRoom(this.player.x, this.player.y) ||
+                     this.map.bossRoom;
+        this.map.openExit(room, this.player);
+        this.addImpact(10, 0);
+        this.ui.drawNotification(this.ctx, 'THE WAY OUT IS OPEN', 180);
     }
 
     /** Spawn particles at a position. */
@@ -581,8 +601,10 @@ class Game {
             const dist = Math.sqrt(dx * dx + dy * dy);
 
             if (dist < 50) {
-                const currentRoom = this.map.getCurrentRoom(this.player.x, this.player.y);
-                if (currentRoom && currentRoom.type === 'exit') {
+                // The exit only exists once the boss is dead, so reaching it is
+                // proof enough — no room-type check needed (and the room it
+                // opens in is whatever room the player was standing in).
+                {
                     // Guard: skip new transitions while one is already in progress
                     if (this.transitioning) return;
 
@@ -743,18 +765,23 @@ class Game {
 
         if (this.player && this.player.health > 0) this.player.draw(ctx);
 
-        // Exit chevron when the door is off in the distance
-        if (this.map && this.map.exit && this.player) {
-            const ex = this.map.exit;
-            const dx = ex.x - this.player.x;
-            const dy = ex.y - this.player.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist > 140) {
-                const a = Math.atan2(dy, dx);
-                const px = this.player.x + Math.cos(a) * 46;
-                const py = this.player.y + Math.sin(a) * 46;
-                pixelRect(ctx, px, py, 9, 9, PALETTE.exit);
-                pixelRect(ctx, px, py, 4, 4, PALETTE.void);
+        // Objective chevron. Without an exit to head for, a player would be
+        // hunting a boss room blind across a 7000px map, so the marker points
+        // at the boss first and the exit only once it has opened.
+        if (this.map && this.player) {
+            const target = this.map.exit ||
+                (this.map.bossRoom ? { x: this.map.bossRoom.cx, y: this.map.bossRoom.cy } : null);
+            if (target) {
+                const dx = target.x - this.player.x;
+                const dy = target.y - this.player.y;
+                if (Math.hypot(dx, dy) > 140) {
+                    const a = Math.atan2(dy, dx);
+                    const px = this.player.x + Math.cos(a) * 46;
+                    const py = this.player.y + Math.sin(a) * 46;
+                    const col = this.map.exit ? PALETTE.exit : PALETTE.danger;
+                    pixelRect(ctx, px, py, 9, 9, col);
+                    pixelRect(ctx, px, py, 4, 4, PALETTE.void);
+                }
             }
         }
 

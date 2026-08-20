@@ -63,6 +63,12 @@ class UI {
                          Math.max(1, Math.floor(room.h * scale)));
         }
 
+        // Boss room until it is cleared, then the exit that replaces it.
+        if (map.bossRoom && !map.exit) {
+            ctx.fillStyle = PALETTE.danger;
+            ctx.fillRect(Math.floor(map.bossRoom.cx * scale) - 2,
+                         Math.floor(map.bossRoom.cy * scale) - 2, 5, 5);
+        }
         if (map.exit) {
             ctx.fillStyle = PALETTE.exit;
             ctx.fillRect(Math.floor(map.exit.x * scale) - 2, Math.floor(map.exit.y * scale) - 2, 5, 5);

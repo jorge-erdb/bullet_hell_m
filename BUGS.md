@@ -22,17 +22,6 @@ debugging path is part of the record, not noise.
   corridors)` as written.
 - **Severity:** 🟢 Dead logic.
 
-### B. Boss enemy is unreachable content
-- **File:** `js/enemy.js` (`BossEnemy`), `js/map.js` (`assignRoomTypes()`)
-- **Symptom:** A complete multi-phase boss — hexagon rendering, phase indicator,
-  wide health bar, distinct attack patterns — never appears in play.
-- **Cause:** `assignRoomTypes()` only ever assigns `combat`, `combat-hard`,
-  `treasure` and `empty`. Nothing assigns `boss`, so the `'boss'` branch of
-  `getEnemiesForRoom()` and `createEnemy('boss', …)` are unreachable.
-- **Fix:** assign `boss` to one room per floor (the room farthest from start
-  that isn't the exit), or delete the class.
-- **Severity:** 🟢 Dead code / missing feature.
-
 ---
 
 ## Fixed
@@ -231,42 +220,54 @@ debugging path is part of the record, not noise.
   bug, since `new Map()` is such ordinary code.
 - **Status:** ✅ Fixed.
 
-### 13. `gameOver()` left the level-up screen visible 🟡
+### 13. Boss enemy was unreachable content 🟢
+- **File:** `js/enemy.js` (`BossEnemy`), `js/map.js` (`setBossRoom()`)
+- **Symptom:** A complete multi-phase boss — phase indicator, wide health bar,
+  three distinct attack patterns — never appeared in play.
+- **Cause:** nothing ever assigned the `boss` room type, so that branch of
+  `getEnemiesForRoom()` and `createEnemy('boss', …)` were unreachable.
+- **Fix:** `setBossRoom()` marks the room farthest from the start as the boss
+  room on every floor, and the floor's exit is gated behind killing it.
+- **Verified:** 300 generated maps all produced a boss room, never the start
+  room, always adjacent to a corridor — so no floor can softlock.
+- **Status:** ✅ Fixed.
+
+### 14. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 14. Game loop never stopped after game over 🟡
+### 15. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 15. Player could act during room transitions 🟡
+### 16. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 16. Confirm button worked with no upgrade selected 🟢
+### 17. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 17. Only one upgrade shown for a multi-level XP gain 🟢
+### 18. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 18. Redundant `Game.level` 🟢
+### 19. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 19. Over-generous bullet cleanup margin 🟢
+### 20. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 20. Confusing "Full Heal" upgrade 🟢
+### 21. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 21. Debug scaffolding shipped in the build 🟢
+### 22. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -283,4 +284,4 @@ debugging path is part of the record, not noise.
 |---|---|---|
 | 🔴 Critical | 0 | 6 |
 | 🟡 Moderate | 0 | 8 |
-| 🟢 Minor | 3 | 7 |
+| 🟢 Minor | 2 | 8 |

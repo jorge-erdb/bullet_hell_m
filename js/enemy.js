@@ -27,6 +27,35 @@ function difficultyForFloor(floor) {
     return Math.max(0, Math.min(1, t));
 }
 
+/**
+ * Floors completed beyond the end of the ramp. 0 up to floor 10, then 1, 2, …
+ *
+ * The ramp only eases the opening; past it every floor used to be identical,
+ * so a run had no upper curve at all. This drives the growth that keeps going.
+ */
+function endgameFloors(floor) {
+    return Math.max(0, floor - DIFFICULTY_RAMP_FLOORS);
+}
+
+/**
+ * Endgame growth per stat, as multipliers.
+ *
+ * Health carries most of the curve because it is the safest lever: it lengthens
+ * fights without making them less readable. Speed and fire rate are capped
+ * hard — an enemy faster than the player, or firing continuously, stops being
+ * a challenge and starts being unfair.
+ */
+const ENDGAME = {
+    healthPerFloor:   0.16,   // uncapped: the main pressure
+    damagePerFloor:   0.05,
+    damageCap:        2.2,
+    speedPerFloor:    0.020,
+    speedCap:         1.30,
+    cooldownPerFloor: 0.028,
+    cooldownFloor:    0.60,   // never fire faster than this fraction of base
+    countEvery:       4       // +1 enemy per room every N floors past the ramp
+};
+
 
 // ===== Base Enemy Class =====
 class Enemy {
@@ -94,12 +123,30 @@ class Enemy {
      *
      * @param {number} t - ramp position from difficultyForFloor()
      */
-    applyDifficulty(t) {
+    applyDifficulty(t, floor = 1) {
         const ease = (early) => early + (1 - early) * t;
 
         this.speed *= ease(EARLY_GAME.speed);
         this.bulletSpeedScale = ease(EARLY_GAME.bulletSpeed);
         this.shootCooldown = Math.round(this.shootCooldown * ease(EARLY_GAME.shootCooldown));
+
+        // Endgame growth, applied on top once the ramp is finished.
+        const e = endgameFloors(floor);
+        if (e > 0) {
+            const hp = 1 + ENDGAME.healthPerFloor * e;
+            this.maxHealth = Math.round(this.maxHealth * hp);
+            this.health = this.maxHealth;
+
+            this.damage = Math.round(this.damage *
+                Math.min(ENDGAME.damageCap, 1 + ENDGAME.damagePerFloor * e));
+            this.speed *= Math.min(ENDGAME.speedCap, 1 + ENDGAME.speedPerFloor * e);
+            this.shootCooldown = Math.max(
+                Math.round(this.shootCooldown * ENDGAME.cooldownFloor),
+                Math.round(this.shootCooldown * (1 - ENDGAME.cooldownPerFloor * e)));
+
+            // Deeper enemies are worth more, so levelling keeps pace a little.
+            this.xpValue = Math.round(this.xpValue * (1 + 0.10 * e));
+        }
 
         // shootTimer starts at 0, which makes every enemy fire on its first
         // frame — the whole room volleys the instant the player walks in.
