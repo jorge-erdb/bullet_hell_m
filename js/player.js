@@ -2,6 +2,14 @@
  * Player class — handles movement, shooting, stats, and leveling.
  */
 class Player {
+    /**
+     * Per-level growth of the XP requirement once the authored table runs out.
+     * Softer than the table's own late ratio (≈1.30), which compounds too hard
+     * for an endless run — the requirement has to stay reachable against XP
+     * income that only grows about 10% per floor.
+     */
+    static XP_GROWTH = 1.20;
+
     constructor(x, y) {
         // Position
         this.x = x;
@@ -36,10 +44,25 @@ class Player {
         this.angle = 0;
     }
 
-    /** XP needed to reach next level. Returns 0 if max level. */
+    /**
+     * XP needed to reach the next level.
+     *
+     * The hand-authored table covers the early curve; past it the requirement
+     * keeps growing geometrically at roughly the table's own rate, so there is
+     * no level cap. That matters because enemy scaling never stops either —
+     * capping the player while the floors keep getting harder guarantees every
+     * long run ends in a wall the player cannot build against.
+     *
+     * The old guard also read `level >= xpTable.length`, which capped at 10 and
+     * meant the final table entry was never used.
+     */
     xpToNext() {
-        if (this.level >= this.xpTable.length) return 0;
-        return this.xpTable[this.level - 1];
+        const i = this.level - 1;
+        if (i < this.xpTable.length) return this.xpTable[i];
+
+        const last = this.xpTable[this.xpTable.length - 1];
+        const beyond = i - this.xpTable.length + 1;
+        return Math.round(last * Math.pow(Player.XP_GROWTH, beyond));
     }
 
     /** Gain XP and return true if leveled up. */

@@ -259,6 +259,13 @@ do not — the asymmetry is in the player's favour.
 
 ### Level-ups
 
+There is no level cap. The authored `xpTable` covers the early curve and the
+requirement continues geometrically past it at `Player.XP_GROWTH`. That is not
+a flourish: enemy scaling never stops, so capping the player guarantees every
+long run ends against a wall they cannot build against.
+
+
+
 `Player.gainXP()` performs the level itself (subtracting the cost and raising
 the threshold), so the number of *pending* level-ups is tracked separately in a
 `pendingLevelUps` counter and drained one screen at a time. A single large orb

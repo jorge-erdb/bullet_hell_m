@@ -232,42 +232,63 @@ debugging path is part of the record, not noise.
   room, always adjacent to a corridor — so no floor can softlock.
 - **Status:** ✅ Fixed.
 
-### 14. `gameOver()` left the level-up screen visible 🟡
+### 14. Levelling capped at 10 while enemy scaling continued forever 🔴
+- **File:** `js/player.js` — `xpToNext()`
+- **Symptom:** the HUD read `Lv 10 — 907 / 0`. Past level 10 XP orbs did
+  nothing, no further upgrades were offered, and a run met steadily harder
+  floors with a permanently fixed build.
+- **Cause:** two faults in one guard. `if (this.level >= this.xpTable.length)`
+  returned 0 as "max level", which both capped progression *and* was off by
+  one — the table's final entry (2400) was unreachable. The zero then surfaced
+  in the HUD as a `/ 0` denominator.
+- **Impact:** the endgame scaling added earlier made this decisive rather than
+  cosmetic. Enemy health grows without limit, so a capped player is guaranteed
+  to hit a wall they cannot build against. Reported from a real run: floor 14,
+  level 10, 907 XP banked into nothing.
+- **Fix:** past the authored table the requirement continues geometrically at
+  `XP_GROWTH`, so there is no cap. 1.20 rather than the table's own ≈1.30,
+  which compounds too hard against XP income that only grows about 10% per
+  floor.
+- **Verified:** levels 1–10 unchanged; level 11 reachable; the curve settles at
+  roughly one level every 4–6 floors, stretching to 7 by level 22.
+- **Status:** ✅ Fixed.
+
+### 15. `gameOver()` left the level-up screen visible 🟡
 - **Fix:** `gameOver()` now calls `hideLevelUp()` first, so dying mid-draft no
   longer stacks two overlays and blocks restart. **Status:** ✅ Fixed.
 
-### 15. Game loop never stopped after game over 🟡
+### 16. Game loop never stopped after game over 🟡
 - **Fix:** the `GAME_OVER` branch of `loop()` returns without re-scheduling.
   **Status:** ✅ Fixed.
 
-### 16. Player could act during room transitions 🟡
+### 17. Player could act during room transitions 🟡
 - **Fix:** added a `TRANSITIONING` state that renders but skips updates, plus a
   re-entry guard so an in-flight transition can't start another.
   **Status:** ✅ Fixed.
 
-### 17. Confirm button worked with no upgrade selected 🟢
+### 18. Confirm button worked with no upgrade selected 🟢
 - **Fix:** `applyUpgrade()` returns early and shows a "No upgrade selected!"
   notification. **Status:** ✅ Fixed.
 
-### 18. Only one upgrade shown for a multi-level XP gain 🟢
+### 19. Only one upgrade shown for a multi-level XP gain 🟢
 - **Cause:** `gainXP()` performs the level itself, so re-deriving pending levels
   from `xp >= xpToNext()` always read false.
 - **Fix:** a `pendingLevelUps` counter is incremented per level and drained one
   upgrade screen per frame. **Status:** ✅ Fixed.
 
-### 19. Redundant `Game.level` 🟢
+### 20. Redundant `Game.level` 🟢
 - **Fix:** removed; `player.level` is the single source of truth.
   **Status:** ✅ Fixed.
 
-### 20. Over-generous bullet cleanup margin 🟢
+### 21. Over-generous bullet cleanup margin 🟢
 - **Fix:** call sites pass a margin of `50` instead of the `100` default.
   **Status:** ✅ Fixed.
 
-### 21. Confusing "Full Heal" upgrade 🟢
+### 22. Confusing "Full Heal" upgrade 🟢
 - **Fix:** `p.health = p.maxHealth` instead of `p.heal(p.maxHealth)`.
   **Status:** ✅ Fixed.
 
-### 22. Debug scaffolding shipped in the build 🟢
+### 23. Debug scaffolding shipped in the build 🟢
 - **Symptom:** A yellow monospace `DEBUG` readout in the HUD showing invincibility
   timers and bullet counts.
 - **Fix:** removed the `#debug-info` element, the per-60-frame debug writer in
@@ -282,6 +303,6 @@ debugging path is part of the record, not noise.
 
 | Severity | Open | Fixed |
 |---|---|---|
-| 🔴 Critical | 0 | 6 |
+| 🔴 Critical | 0 | 7 |
 | 🟡 Moderate | 0 | 8 |
 | 🟢 Minor | 2 | 8 |
