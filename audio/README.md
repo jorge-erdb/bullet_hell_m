@@ -1,37 +1,45 @@
 # Music
 
-Drop tracks here and they play automatically. Nothing else needs changing.
+Three tracks, one per floor, cycling back to the first on floor 4.
 
-## Naming
+| Order | File | Length | Looped body |
+|---|---|---|---|
+| Floor 1 | `savage-engine.mp3` | 1:02 | 0:00 – 0:57 |
+| Floor 2 | `engine-of-the-abyss.mp3` | 1:08 | 0:00 – 1:05 |
+| Floor 3 | `hydraulic-siege.mp3` | 1:21 | 0:00 – 1:16 |
 
-| File | When it plays |
-|---|---|
-| `track1.ogg` / `track1.mp3` | Floor 1, and the start of every run |
-| `track2.ogg` / `track2.mp3` | Floor 2 |
-| `track3.ogg` / `track3.mp3` | Floor 3 |
+The rotation is set in `js/main.js` (`audio.setTracks([...])`). Add files and
+entries together and it grows.
 
-Tracks then cycle: floor 4 returns to `track1`, and so on. The list lives in
-`js/main.js` (`audio.setTracks([...])`) if you want more than three — add the
-files and the entries, and the rotation grows with them.
+## Looping — why the files are not trimmed
 
-## Format
+All three fade to silence and end with dead air: 5.4s, 3.0s and 5.0s
+respectively. Looped naively, that drops several seconds of silence into the
+middle of a fight every time round.
 
-Provide **either** `.ogg` or `.mp3` — the player asks the browser which it
-supports and requests that one, preferring Ogg where available. Ogg Vorbis is
-usually smaller at the same quality; MP3 is the safer bet for older Safari. If
-you only have one format, use MP3.
+Rather than re-encoding, playback decodes each track through Web Audio and
+loops **only the musical body**, with `loopStart`/`loopEnd` found automatically
+by `AudioSystem.findLoopPoints()`: it builds an RMS profile in quarter-second
+windows, takes the median as the reference level, walks in from each end to the
+first window still at 60% of it, then nudges both edges to the nearest zero
+crossing so the seam does not click.
 
-Missing files are not an error. The game checks, fails quietly, and runs with
-sound effects only — so the repo stays playable with no audio committed.
+This means **a replacement track needs no special preparation** — a fade-out is
+detected and skipped. It also means the files stay untouched and listenable on
+their own.
 
-## Practical notes
+## Format and delivery
 
-- **Loop cleanly.** Tracks are set to `loop`, so a fade-in or fade-out at the
-  edges produces an audible dip every time round. Ask for a seamless loop, or
-  trim the silence off both ends.
-- **Keep them small.** These download before they play. Aim for under ~2 MB
-  each; 96–128 kbps is plenty for a chiptune-style track, and GitHub Pages
-  serves them as ordinary static files.
-- **Mind the mix.** Music sits at 0.45 gain against effects at 0.5. If a track
-  buries the gunfire, lower it in the file rather than in code — that keeps the
-  mute button and the balance predictable.
+MP3, 44.1 kHz stereo. The three sit at a well-matched ~0.194 RMS, so no
+per-track gain correction is applied.
+
+Music plays through the Web Audio graph, so `musicGain` (0.45, against effects
+at 0.5) and the master mute both apply to it. Only one track is fetched and
+decoded at a time — roughly 1.5 MB over the wire, not the full 4.9 MB.
+
+On `file://` there is no fetch, so playback falls back to a plain `<audio>`
+element: music still plays, but the loop points are lost and the fade gap
+returns. Serve over HTTP to get proper looping.
+
+Missing files are not an error. The game fails quietly and runs with sound
+effects only.

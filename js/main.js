@@ -36,7 +36,11 @@
 
     // Music tracks are optional: drop files in audio/ and they play, otherwise
     // the game runs with effects only.
-    audio.setTracks(['audio/track1', 'audio/track2', 'audio/track3']);
+    audio.setTracks([
+        'audio/savage-engine',        // floor 1 — leanest of the three
+        'audio/engine-of-the-abyss',
+        'audio/hydraulic-siege'
+    ]);
 
     function startGame() {
         // Browsers start an AudioContext suspended; only a user gesture may

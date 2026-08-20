@@ -21,6 +21,7 @@ regenerate a fresh dungeon and keep your build. Die and the run ends.
 | **Roguelite upgrades** | 10 upgrades drafted 3-at-a-time on level-up — health, damage, speed, multi-shot, pierce, fire rate, bullet speed, pickup magnet |
 | **Enemy variety** | Chasers, shooters that lead their target, and spiral emitters, each with its own movement and firing pattern |
 | **Difficulty ramp** | Enemy movement, fire rate and bullet speed ease in over the first 10 floors rather than starting at full strength |
+| **Sound** | Effects synthesized live via Web Audio — no samples to download — over a three-track soundtrack that advances each floor |
 | **Feel** | Screen shake and damage flash on hit, low-health pulse, invincibility blink, particle bursts, magnet-pull on XP orbs, live minimap with threats |
 | **Presentation** | Loose modern retro on a chunky pixel grid, DOOM-register palette — rust and dried blood, hot amber for anything urgent |
 
@@ -196,6 +197,20 @@ where enemies enter the world, so no spawn path can bypass it.
 `shootTimer` also starts partway through a randomised cooldown rather than at
 zero. Left at zero every enemy fires on its first update, so an entire room
 volleys the instant the player walks in.
+
+### Sound
+
+Effects are generated rather than sampled. A bullet hell fires constantly, so
+per-shot files would mean either a large download or audible repetition;
+synthesis keeps the project dependency-free and lets pitch jitter per shot,
+which is most of what stops sustained fire becoming a machine-gun of identical
+clicks. Two primitives — a pitch-swept tone and filtered noise — build every
+effect, and a voice cap keeps a busy room from summing dozens of oscillators
+into clipping mush.
+
+Music loops only the musical body of each track, skipping any fade-out, with
+loop points detected from an RMS profile and snapped to zero crossings. See
+[audio/README.md](audio/README.md).
 
 ### Bullets and walls
 

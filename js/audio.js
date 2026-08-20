@@ -43,7 +43,10 @@ class AudioSystem {
         this.musicGain = null;
         this.voices = 0;
 
-        this.musicEl = null;
+        this.musicEl = null;   // fallback path only
+        this.musicSrc = null;  // Web Audio path
+        this.musicToken = 0;   // discards loads superseded by a newer one
+        this.musicInfo = null;
         this.tracks = [];
         this.trackIndex = 0;
 
@@ -233,35 +236,124 @@ class AudioSystem {
     // ===== Music =====
 
     /**
-     * Register music tracks. Each entry is a base path without extension;
-     * the browser picks a format it supports.
+     * Register music tracks. Each entry is a base path without extension.
      *
-     * Nothing here fails loudly: if the files are absent the game runs
-     * silent, so the repo stays playable without any audio assets committed.
+     * Nothing here fails loudly: if the files are absent the game runs with
+     * effects only, so the repo stays playable without any audio committed.
      */
     setTracks(paths) {
         this.tracks = paths;
     }
 
-    /** Start (or restart) music at a given track index, looping. */
-    playMusic(index = 0) {
-        if (!this.tracks.length) return;
-        this.trackIndex = index % this.tracks.length;
+    /**
+     * Find the musical body of a track, excluding lead-in silence and any
+     * fade-out, and return sample-accurate loop points.
+     *
+     * Generated tracks almost always fade to silence at the end, which is fine
+     * for listening and useless for looping — a plain `loop` drops several
+     * seconds of dead air into the middle of a fight every time round. Looping
+     * the body instead avoids re-encoding the files at all.
+     *
+     * Both edges are nudged to the nearest zero crossing so the seam does not
+     * click.
+     */
+    static findLoopPoints(buffer) {
+        const d = buffer.getChannelData(0);
+        const sr = buffer.sampleRate;
+        const win = Math.floor(sr * 0.25);
 
-        if (!this.musicEl) {
-            this.musicEl = new Audio();
-            this.musicEl.loop = true;
-            this.musicEl.volume = 0.45;
-            // Failure here is expected when no audio assets are present.
-            this.musicEl.addEventListener('error', () => { /* run silent */ });
+        // RMS profile over quarter-second windows
+        const profile = [];
+        for (let i = 0; i + win <= d.length; i += win) {
+            let sum = 0;
+            for (let k = i; k < i + win; k++) sum += d[k] * d[k];
+            profile.push(Math.sqrt(sum / win));
         }
+        if (!profile.length) return { start: 0, end: buffer.duration };
 
+        const sorted = [...profile].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+
+        // Walk in from each end to the first window at 60% of the median level.
+        const FLOOR = median * 0.6;
+        let first = 0;
+        while (first < profile.length && profile[first] < FLOOR) first++;
+        let last = profile.length - 1;
+        while (last > first && profile[last] < FLOOR) last--;
+
+        let startS = first * win;
+        let endS = Math.min(d.length, (last + 1) * win);
+
+        // Nudge to zero crossings to avoid a click at the seam.
+        const toZero = (idx, dir) => {
+            const limit = Math.min(Math.floor(sr * 0.05), 2000);
+            for (let n = 0; n < limit; n++) {
+                const i = idx + n * dir;
+                if (i <= 0 || i >= d.length - 1) break;
+                if ((d[i] <= 0 && d[i + 1] > 0) || (d[i] >= 0 && d[i + 1] < 0)) return i;
+            }
+            return idx;
+        };
+        startS = toZero(startS, 1);
+        endS = toZero(endS, -1);
+
+        return { start: startS / sr, end: endS / sr };
+    }
+
+    /**
+     * Play a track, looping its musical body.
+     *
+     * Uses Web Audio so music runs through musicGain like everything else — an
+     * HTMLAudioElement would bypass the graph, leaving the music mix and the
+     * master mute on separate paths. Falls back to an element when fetch or
+     * decode is unavailable, which is the case on file:// where fetch is
+     * blocked by CORS.
+     */
+    async playMusic(index = 0) {
+        if (!this.tracks.length || !this.unlocked || !this.ctx) return;
+        this.trackIndex = ((index % this.tracks.length) + this.tracks.length) % this.tracks.length;
         const base = this.tracks[this.trackIndex];
-        const canOgg = this.musicEl.canPlayType('audio/ogg') !== '';
-        this.musicEl.src = `${base}.${canOgg ? 'ogg' : 'mp3'}`;
-        this.musicEl.muted = this.muted;
-        const p = this.musicEl.play();
-        if (p && p.catch) p.catch(() => { /* blocked until a gesture; fine */ });
+
+        this.stopMusic();
+        const token = ++this.musicToken; // guards against a slow load landing late
+
+        try {
+            const res = await fetch(`${base}.mp3`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const bytes = await res.arrayBuffer();
+            const buffer = await this.ctx.decodeAudioData(bytes);
+            if (token !== this.musicToken) return; // superseded while loading
+
+            const { start, end } = AudioSystem.findLoopPoints(buffer);
+            const src = this.ctx.createBufferSource();
+            src.buffer = buffer;
+            src.loop = true;
+            src.loopStart = start;
+            src.loopEnd = end;
+            src.connect(this.musicGain);
+            src.start(0, start);
+            this.musicSrc = src;
+            this.musicInfo = { base, start: +start.toFixed(2), end: +end.toFixed(2) };
+        } catch (_) {
+            // No fetch/decode available (file://) or the file is missing.
+            // Fall back to a plain element; the fade gap returns, but the game
+            // still has music rather than none.
+            this.playMusicFallback(base, token);
+        }
+    }
+
+    playMusicFallback(base, token) {
+        try {
+            const el = new Audio(`${base}.mp3`);
+            el.loop = true;
+            el.volume = 0.45;
+            el.muted = this.muted;
+            el.addEventListener('error', () => { /* run silent */ });
+            const pr = el.play();
+            if (pr && pr.catch) pr.catch(() => { /* blocked until a gesture */ });
+            if (token !== this.musicToken) { el.pause(); return; }
+            this.musicEl = el;
+        } catch (_) { /* run silent */ }
     }
 
     /** Advance to the next track — called on each new floor. */
@@ -271,6 +363,15 @@ class AudioSystem {
     }
 
     stopMusic() {
-        if (this.musicEl) { this.musicEl.pause(); this.musicEl.currentTime = 0; }
+        this.musicToken = (this.musicToken || 0) + 1;
+        if (this.musicSrc) {
+            try { this.musicSrc.stop(); } catch (_) { /* already stopped */ }
+            this.musicSrc.disconnect();
+            this.musicSrc = null;
+        }
+        if (this.musicEl) {
+            this.musicEl.pause();
+            this.musicEl = null;
+        }
     }
 }
